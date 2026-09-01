@@ -48,9 +48,9 @@ export async function startServer(options) {
         req.on("close",()=>{agentClients.delete(res);agentDelivery.delete(res);});return;
       }
       if(req.method==="POST"&&url.pathname==="/api/threads"){
-        const data=await body(req),lineCount=latestContent.split("\n").length; if(!data.comment?.trim()||!Number.isInteger(data.anchor?.startLine)||!Number.isInteger(data.anchor?.endLine)||data.anchor.startLine<1||data.anchor.endLine<data.anchor.startLine||data.anchor.endLine>lineCount)return send(res,400,{error:"A valid line range within the document and comment are required"});
-        const context=contextFor(latestContent.split("\n"),data.anchor.startLine,data.anchor.endLine);
-        const anchor={...data.anchor,selectedText:typeof data.anchor.selectedText==="string"?data.anchor.selectedText:"",prefix:typeof data.anchor.prefix==="string"?data.anchor.prefix:context.prefix,suffix:typeof data.anchor.suffix==="string"?data.anchor.suffix:context.suffix};
+        const data=await body(req),lineCount=latestContent.split("\n").length,documentAnchor=data.anchor?.type==="document"; if(!data.comment?.trim()||(!documentAnchor&&(!Number.isInteger(data.anchor?.startLine)||!Number.isInteger(data.anchor?.endLine)||data.anchor.startLine<1||data.anchor.endLine<data.anchor.startLine||data.anchor.endLine>lineCount)))return send(res,400,{error:"A valid line range or document anchor and comment are required"});
+        const context=documentAnchor?null:contextFor(latestContent.split("\n"),data.anchor.startLine,data.anchor.endLine);
+        const anchor=documentAnchor?{type:"document"}:{...data.anchor,selectedText:typeof data.anchor.selectedText==="string"?data.anchor.selectedText:"",prefix:typeof data.anchor.prefix==="string"?data.anchor.prefix:context.prefix,suffix:typeof data.anchor.suffix==="string"?data.anchor.suffix:context.suffix};
         const thread=store.createThread(opened.document.id,anchor,data.comment);broadcast("thread",{thread});queueFeedback(thread.messages.at(-1).id);return send(res,201,thread);
       }
       const messageStatus=url.pathname.match(/^\/api\/threads\/([^/]+)\/messages\/([^/]+)\/agent-status$/);
@@ -85,6 +85,6 @@ export async function startServer(options) {
   function sendAgentEvent(client,event){const delivered=agentDelivery.get(client);if(!delivered||delivered.has(event.id))return;delivered.add(event.id);client.write(`event: feedback\ndata: ${JSON.stringify({...feedback(state()),eventId:event.id,threadId:event.threadId,messageId:event.messageId})}\n\n`);}
 }
 
-function feedback(s){return {type:"review_feedback",document:s.document.path,revision:s.revision.number,sessionId:s.session.id,threads:s.threads.filter(t=>t.status==="open").map(t=>({id:t.id,quote:t.anchor.selectedText,lineRange:{start:t.anchor.startLine,end:t.anchor.endLine},surroundingContext:{prefix:t.anchor.prefix,suffix:t.anchor.suffix},orphaned:t.orphaned,messages:t.messages}))};}
+function feedback(s){return {type:"review_feedback",document:s.document.path,revision:s.revision.number,sessionId:s.session.id,threads:s.threads.filter(t=>t.status==="open").map(t=>{const documentWide=t.anchor?.type==="document";return {id:t.id,scope:documentWide?"document":"range",quote:documentWide?"":t.anchor.selectedText,lineRange:documentWide?null:{start:t.anchor.startLine,end:t.anchor.endLine},surroundingContext:documentWide?null:{prefix:t.anchor.prefix,suffix:t.anchor.suffix},orphaned:t.orphaned,messages:t.messages};})};}
 function notifyAgents(clients,event,payload){const message=`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;for(const client of clients)client.write(message);}
 function open(url){const [cmd,args]=process.platform==="darwin"?["open",[url]]:process.platform==="win32"?["cmd",["/c","start",url]]:["xdg-open",[url]];execFile(cmd,args,()=>{});}

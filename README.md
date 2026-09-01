@@ -1,6 +1,6 @@
 # jstack-md
 
-`jstack-md` turns an AI-authored Markdown file into a local, browser-first review conversation. Select text, leave inline feedback, let the authoring agent reply or edit the file, inspect revisions, and finish the review without Git or project-local metadata.
+`jstack-md` turns an AI-authored Markdown file into a local, browser-first review conversation. Select text or comment on the whole document, let the authoring agent reply or edit the file, inspect revisions, and finish the review without Git or project-local metadata.
 
 ## Requirements
 
@@ -67,7 +67,7 @@ jstack-md design.md --provider claude-code --session-id "$SESSION_ID" --cwd "$PW
 
 ## API
 
-- `POST /api/threads` — `{ anchor, comment }`
+- `POST /api/threads` — `{ anchor, comment }`; inline anchors use line fields, while a document-wide comment uses `{ anchor: { type: "document" }, comment }`
 - `POST /api/threads/:id/messages` — `{ author: "human" | "agent" | "system", content }`
 - `POST /api/threads/:threadId/messages/:messageId/agent-status` — `{ status: "received" | "processing" | "completed" | "error" }`
 - `POST /api/threads/:id/status` — `{ status: "open" | "resolved" }`
@@ -76,5 +76,7 @@ jstack-md design.md --provider claude-code --session-id "$SESSION_ID" --cwd "$PW
 - `POST /api/finish` — optionally `{ result: "abandoned" }`
 - `GET /events` — SSE stream
 - `GET /api/agent-events` — authoring-agent feedback SSE stream
+
+Document-wide feedback is returned with `scope: "document"`, `lineRange: null`, and `surroundingContext: null`. It is kept in the same thread collection as inline feedback, can receive replies, and is included in agent notifications without being re-anchored to a line.
 
 Run checks with `npm test`.

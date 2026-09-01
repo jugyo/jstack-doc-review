@@ -3,6 +3,7 @@ export function contextFor(lines, startLine, endLine) {
 }
 
 export function reanchor(anchor, content) {
+  if (anchor?.type === "document") return anchor;
   const lines = content.split("\n");
   const selected = typeof anchor.selectedText === "string" ? anchor.selectedText : "";
   const prefix = typeof anchor.prefix === "string" ? anchor.prefix : "";

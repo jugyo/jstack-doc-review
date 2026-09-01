@@ -60,7 +60,9 @@ function render() {
   let documentHtml = "";
   const comments = [...state.threads].sort((a, b) => {
     if (a.orphaned !== b.orphaned) return a.orphaned ? 1 : -1;
-    return (a.anchor.startLine - b.anchor.startLine) || a.createdAt.localeCompare(b.createdAt);
+    const aLine = a.anchor.type === "document" ? 0 : a.anchor.startLine;
+    const bLine = b.anchor.type === "document" ? 0 : b.anchor.startLine;
+    return (aLine - bLine) || a.createdAt.localeCompare(b.createdAt);
   });
 
   state.document.content.split("\n").forEach((line, index) => {
@@ -74,9 +76,13 @@ function render() {
   });
 
   const detached = comments.filter(thread => thread.orphaned);
-  const attached = comments.filter(thread => !thread.orphaned);
-  const commentHtml = attached.map(threadHtml).join("") + (detached.length ? `<div class="detached-threads"><div class="detached-label">Detached comments</div>${detached.map(threadHtml).join("")}</div>` : "");
-  $("#document").innerHTML = `<div class="document-layout"><div class="document-content">${documentHtml}</div><div class="comment-rail">${commentHtml}</div></div>`;
+  const documentComments = comments.filter(thread => thread.anchor.type === "document");
+  const attached = comments.filter(thread => !thread.orphaned && thread.anchor.type !== "document");
+  const commentHtml = (documentComments.length ? `<div class="document-threads">${documentComments.map(threadHtml).join("")}</div>` : "") + attached.map(threadHtml).join("") + (detached.length ? `<div class="detached-threads"><div class="detached-label">Detached comments</div>${detached.map(threadHtml).join("")}</div>` : "");
+  const globalComposer = `<form class="global-composer" id="globalComposer"><textarea aria-label="Comment" placeholder="Write a comment…" rows="3"></textarea><div class="global-composer-actions"><button type="submit" class="primary">Send</button></div></form>`;
+  const railHeader = `<div class="rail-heading"><div><span class="rail-kicker">REVIEW</span><strong>Comments</strong></div><span class="thread-count">${comments.length} comment${comments.length === 1 ? "" : "s"}</span></div>`;
+  const emptyRail = commentHtml ? "" : '<div class="empty-rail">No comments yet</div>';
+  $("#document").innerHTML = `<div class="document-layout"><div class="document-content">${documentHtml}</div><div class="comment-rail">${globalComposer}${railHeader}${commentHtml}${emptyRail}</div></div>`;
   renderHistory();
   $("#binding").textContent = state.agentBinding
     ? `Bound to ${state.agentBinding.provider}${state.agentBinding.sessionId ? ` · ${state.agentBinding.sessionId}` : ""}`
@@ -84,7 +90,8 @@ function render() {
 }
 
 function threadHtml(thread) {
-  const range = thread.anchor.startLine === thread.anchor.endLine
+  const documentWide = thread.anchor.type === "document";
+  const range = documentWide ? "Global" : thread.anchor.startLine === thread.anchor.endLine
     ? `line ${thread.anchor.startLine}`
     : `lines ${thread.anchor.startLine}–${thread.anchor.endLine}`;
   const detached = thread.orphaned ? "Detached · " : "";
@@ -101,7 +108,7 @@ function threadHtml(thread) {
 }
 
 function statusLabel(status) {
-  return ({ received: "受信済み", processing: "処理中", completed: "処理完了", error: "処理エラー" })[status] || status;
+  return ({ received: "Received", processing: "Processing", completed: "Completed", error: "Error" })[status] || status;
 }
 
 function toggleThreadHighlight(thread, highlighted) {
@@ -175,7 +182,7 @@ document.addEventListener("mouseup", event => {
 function showSelection(composer, text, startLine, endLine) {
   const label = startLine === endLine ? `line ${startLine}` : `lines ${startLine}–${endLine}`;
   const preview = composer.querySelector(".selection");
-  preview.textContent = text.trim() ? text : "選択テキストなし";
+  preview.textContent = text.trim() ? text : "No text selected";
   preview.dataset.range = label;
   preview.setAttribute("aria-label", `${label}: ${text}`);
 }
@@ -244,6 +251,15 @@ $("#document").addEventListener("mouseout", event => {
 });
 
 $("#document").addEventListener("submit", async event => {
+  if (event.target.matches(".global-composer")) {
+    event.preventDefault();
+    const textarea = event.target.querySelector("textarea"), comment = textarea.value.trim();
+    if (!comment) return;
+    await api("/api/threads", { method: "POST", body: JSON.stringify({ anchor: { type: "document" }, comment }) });
+    textarea.value = "";
+    await load("Sent.");
+    return;
+  }
   if (!event.target.matches(".reply")) return;
   event.preventDefault();
   const input = event.target.querySelector("input"), content = input.value.trim();
