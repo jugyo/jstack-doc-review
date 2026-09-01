@@ -31,7 +31,8 @@ main { max-width: 1240px; margin: 0 auto; padding: 56px 30px 140px; }
 .document-layout { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 24px; align-items: start; }
 .document-content { min-width: 0; }
 .doc-line { display: grid; grid-template-columns: minmax(0, 1fr) 30px; position: relative; min-width: 0; border-radius: 6px; }
-.doc-line:hover { background: #f4f1eb; }
+.doc-line.thread-hover { background: #f4eee7; }
+.doc-line.thread-hover .line-body.block-code { background: #45464a; }
 .comment-gutter { display: flex; justify-content: center; padding-top: 4px; user-select: none; }
 .comment-trigger { width: 24px; height: 24px; opacity: 0; border: 0; border-radius: 50%; padding: 0; background: transparent; color: var(--accent); font-size: 19px; line-height: 1; transition: opacity .12s, background .12s; }
 .doc-line:hover .comment-trigger, .comment-trigger:focus-visible { opacity: 1; }

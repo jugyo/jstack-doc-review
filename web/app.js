@@ -89,17 +89,27 @@ function threadHtml(thread) {
     : `lines ${thread.anchor.startLine}–${thread.anchor.endLine}`;
   const detached = thread.orphaned ? "Detached · " : "";
   if (thread.status === "resolved") {
-    return `<article class="thread resolved collapsed ${thread.orphaned ? "orphaned" : ""}" data-thread="${thread.id}">
+    return `<article class="thread resolved collapsed ${thread.orphaned ? "orphaned" : ""}" data-thread="${thread.id}" data-start-line="${thread.anchor.startLine}" data-end-line="${thread.anchor.endLine}">
       <div class="thread-head"><span>${detached}Resolved · ${range}</span><button type="button" data-status="open">Reopen</button></div>
     </article>`;
   }
   const waiting = thread.messages.at(-1)?.author === "human";
-  return `<article class="thread open ${thread.orphaned ? "orphaned" : ""}" data-thread="${thread.id}">
+  return `<article class="thread open ${thread.orphaned ? "orphaned" : ""}" data-thread="${thread.id}" data-start-line="${thread.anchor.startLine}" data-end-line="${thread.anchor.endLine}">
     <div class="thread-head"><span>${detached}Open thread · ${range}</span><button type="button" data-status="resolved">Resolve</button></div>
     ${thread.messages.map(message => `<div class="message ${message.author}"><span class="author">${esc(message.author)}</span><p>${esc(message.content)}</p></div>`).join("")}
     ${waiting ? '<div class="agent-waiting">••• Agent notified</div>' : ""}
     <form class="reply"><input placeholder="Continue this conversation…" aria-label="Reply"><button type="submit">Reply</button></form>
   </article>`;
+}
+
+function toggleThreadHighlight(thread, highlighted) {
+  if (thread.classList.contains("orphaned")) return;
+  const startLine = Number(thread.dataset.startLine), endLine = Number(thread.dataset.endLine);
+  if (!Number.isInteger(startLine) || !Number.isInteger(endLine)) return;
+  document.querySelectorAll(".doc-line").forEach(line => {
+    const lineNumber = Number(line.dataset.line);
+    if (lineNumber >= startLine && lineNumber <= endLine) line.classList.toggle("thread-hover", highlighted);
+  });
 }
 
 function renderHistory() {
@@ -220,6 +230,18 @@ $("#document").addEventListener("click", async event => {
   }
 });
 
+$("#document").addEventListener("mouseover", event => {
+  const thread = event.target.closest?.(".thread");
+  if (!thread || (event.relatedTarget instanceof Node && thread.contains(event.relatedTarget))) return;
+  toggleThreadHighlight(thread, true);
+});
+
+$("#document").addEventListener("mouseout", event => {
+  const thread = event.target.closest?.(".thread");
+  if (!thread || (event.relatedTarget instanceof Node && thread.contains(event.relatedTarget))) return;
+  toggleThreadHighlight(thread, false);
+});
+
 $("#document").addEventListener("submit", async event => {
   if (!event.target.matches(".reply")) return;
   event.preventDefault();
@@ -248,17 +270,9 @@ $("#restoreRevision").onclick = async event => {
   historyRevisionId = null;
   await load("Revision restored and saved as a new revision.");
 };
-$("#finish").onclick = () => {
-  const count = state.threads.filter(thread => thread.status === "open").length;
-  $("#finishText").textContent = count ? `${count} open thread${count === 1 ? "" : "s"} remain. The result will be completed-with-open-threads.` : "All threads are resolved. The result will be approved.";
-  $("#finishDialog").showModal();
-};
-$("#finishDialog [data-cancel]").onclick = () => $("#finishDialog").close();
-$("#finishDialog [data-finish]").onclick = () => finish("finish");
-$("#finishDialog [data-abandon]").onclick = () => finish("abandoned");
+$("#finish").onclick = () => finish("finish");
 async function finish(result) {
   const output = await api("/api/finish", { method: "POST", body: JSON.stringify({ result }) });
-  $("#finishDialog").close();
   document.body.innerHTML = `<div class="done"><h1>Review ${esc(output.result)}</h1><p>You can close this window and return to the authoring agent.</p></div>`;
 }
 function notice(message) { $("#notice").textContent = message; setTimeout(() => $("#notice").textContent = "", 3500); }

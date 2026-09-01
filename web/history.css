@@ -1,6 +1,6 @@
 #historyDialog {
   width: min(1060px, calc(100vw - 48px));
-  height: min(720px, calc(100vh - 48px));
+  height: calc(100vh - 48px);
   max-width: none;
   padding: 0;
   overflow: hidden;
