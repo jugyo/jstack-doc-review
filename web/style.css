@@ -56,9 +56,14 @@ main { max-width: 1240px; margin: 0 auto; padding: 56px 30px 140px; }
 .thread-head button { border: 0; padding: 3px 7px; font-size: 11px; white-space: nowrap; }
 .message { padding: 11px 14px; border-bottom: 1px solid #eeeae2; }
 .message:last-of-type { border: 0; }
+.message-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .author { color: var(--accent); font-weight: 700; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
 .message.agent .author { color: var(--blue); }
 .message.system .author { color: var(--green); }
+.message-status { border-radius: 999px; padding: 1px 7px; color: var(--muted); background: #f1efea; font-size: 11px; }
+.message-status.processing { color: var(--blue); background: #edf3fb; }
+.message-status.completed { color: var(--green); background: #edf7f2; }
+.message-status.error { color: #a62b24; background: #fff1ef; }
 .message p { margin: 3px 0; white-space: pre-wrap; }
 .reply { display: flex; gap: 8px; padding: 10px; background: #faf8f3; }
 .reply input { flex: 1; border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; font: inherit; }

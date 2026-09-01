@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { DatabaseSync } from "node:sqlite";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { reanchor } from "../src/anchors.js";
@@ -47,12 +48,101 @@ test("空行を含む選択アンカーを更新後も複数行で再配置す�
 test("marks impossible anchors as unresolved",()=>assert.equal(reanchor({startLine:1,endLine:1,selectedText:"gone",prefix:"",suffix:""},"entirely different"),null));
 test("generates a unified diff",()=>{const d=unifiedDiff("a\nb","a\nc");assert.match(d,/^-b$/m);assert.match(d,/^\+c$/m)});
 
+async function postThread(url, comment) {
+  return fetch(url + "/api/threads", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ anchor: { startLine: 1, endLine: 1, selectedText: "# Design" }, comment }) }).then(response => response.json());
+}
+
+async function readSseEvents(reader, count) {
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const events = [];
+  while (events.length < count) {
+    const { value, done } = await reader.read();
+    assert.equal(done, false);
+    buffer += decoder.decode(value, { stream: true });
+    const chunks = buffer.split("\n\n");
+    buffer = chunks.pop();
+    for (const chunk of chunks) {
+      const event = chunk.match(/^event: ([^\n]+)\ndata: ([\s\S]+)$/);
+      if (event) events.push({ type: event[1], data: JSON.parse(event[2]) });
+    }
+  }
+  return events;
+}
+
+test("連続コメントを永続キューに保持し、再接続時に一度ずつ通知する", async t => {
+  const dir = await mkdtemp(join(tmpdir(), "jstack-md-queue-test-")), file = join(dir, "design.md");
+  await writeFile(file, "# Design\n");
+  const app = await startServer({ documentPath: file, port: 0, openBrowser: false, dataDir: join(dir, "data") });
+  t.after(() => app.close().catch(() => {}));
+  const initialResponse = await fetch(app.url + "/api/agent-events"), initialReader = initialResponse.body.getReader();
+  await readSseEvents(initialReader, 1);
+  await initialReader.cancel();
+  const first = await postThread(app.url, "最初のコメント");
+  const second = await postThread(app.url, "次のコメント");
+  assert.equal(first.messages[0].agentStatus, "received");
+  assert.equal(second.messages[0].agentStatus, "received");
+  const response = await fetch(app.url + "/api/agent-events"), reader = response.body.getReader();
+  const events = await readSseEvents(reader, 3);
+  assert.equal(events[0].type, "ready");
+  assert.deepEqual(new Set(events.slice(1).map(event => event.data.messageId)), new Set([first.messages[0].id, second.messages[0].id]));
+  await reader.cancel();
+});
+
+test("共有データディレクトリでも別文書のイベントを配信しない", async t => {
+  const dir = await mkdtemp(join(tmpdir(), "jstack-md-isolation-test-")), dataDir = join(dir, "data");
+  const fileA = join(dir, "a.md"), fileB = join(dir, "b.md");
+  await writeFile(fileA, "# A\n");
+  await writeFile(fileB, "# B\n");
+  const appA = await startServer({ documentPath: fileA, port: 0, openBrowser: false, dataDir });
+  const appB = await startServer({ documentPath: fileB, port: 0, openBrowser: false, dataDir });
+  t.after(() => Promise.all([appA.close().catch(() => {}), appB.close().catch(() => {})]));
+  const threadA = await postThread(appA.url, "Aだけのコメント");
+  const foreignStatus = await fetch(`${appB.url}/api/threads/${threadA.id}/messages/${threadA.messages[0].id}/agent-status`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ status: "processing" }) });
+  assert.equal(foreignStatus.status, 404);
+  const foreignMessage = await fetch(`${appB.url}/api/threads/${threadA.id}/messages`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ author: "human", content: "別文書への追記" }) });
+  assert.equal(foreignMessage.status, 404);
+  const response = await fetch(appB.url + "/api/agent-events"), reader = response.body.getReader();
+  const decoder = new TextDecoder(), first = await reader.read();
+  assert.match(decoder.decode(first.value), /event: ready/);
+  const next = await Promise.race([reader.read(), new Promise(resolve => setTimeout(() => resolve({ timedOut: true }), 100))]);
+  assert.equal(next.timedOut, true);
+  await reader.cancel();
+});
+
+test("既存 DB の human message を受信済みキューへ移行する", async t => {
+  const dir = await mkdtemp(join(tmpdir(), "jstack-md-migration-test-")), file = join(dir, "legacy.md"), dataDir = join(dir, "data");
+  await writeFile(file, "# Legacy\n");
+  await mkdir(dataDir);
+  const legacy = new DatabaseSync(join(dataDir, "review.db"));
+  legacy.exec(`
+    CREATE TABLE documents(id TEXT PRIMARY KEY,path TEXT UNIQUE NOT NULL,current_revision_id TEXT);
+    CREATE TABLE sessions(id TEXT PRIMARY KEY,document_id TEXT NOT NULL,status TEXT NOT NULL,started_at TEXT NOT NULL,completed_at TEXT,result TEXT,agent_binding TEXT);
+    CREATE TABLE revisions(id TEXT PRIMARY KEY,document_id TEXT NOT NULL,number INTEGER NOT NULL,content TEXT NOT NULL,content_hash TEXT NOT NULL,created_at TEXT NOT NULL,reason TEXT,source_thread_ids TEXT NOT NULL DEFAULT '[]');
+    CREATE TABLE threads(id TEXT PRIMARY KEY,document_id TEXT NOT NULL,anchor TEXT NOT NULL,status TEXT NOT NULL,orphaned INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL);
+    CREATE TABLE messages(id TEXT PRIMARY KEY,thread_id TEXT NOT NULL,author TEXT NOT NULL,content TEXT NOT NULL,created_at TEXT NOT NULL);
+  `);
+  legacy.prepare("INSERT INTO documents VALUES(?,?,?)").run("legacy-doc",file,null);
+  legacy.prepare("INSERT INTO threads VALUES(?,?,?,?,?,?)").run("legacy-thread","legacy-doc",JSON.stringify({startLine:1,endLine:1,selectedText:"# Legacy",prefix:"",suffix:""}),"open",0,"2026-01-01T00:00:00.000Z");
+  legacy.prepare("INSERT INTO messages VALUES(?,?,?,?,?)").run("legacy-message","legacy-thread","human","旧コメント","2026-01-01T00:00:01.000Z");
+  legacy.close();
+  const app = await startServer({ documentPath: file, port: 0, openBrowser: false, dataDir });
+  t.after(() => app.close().catch(() => {}));
+  const state = await fetch(app.url + "/api/state").then(response => response.json());
+  assert.equal(state.threads[0].messages[0].agentStatus, "received");
+  const response = await fetch(app.url + "/api/agent-events"), reader = response.body.getReader();
+  const events = await readSseEvents(reader, 2);
+  assert.equal(events[1].data.messageId, "legacy-message");
+  await reader.cancel();
+});
+
 test("end-to-end review API persists, restores, and finishes",async t=>{
   const dir=await mkdtemp(join(tmpdir(),"jstack-md-test-")),file=join(dir,"design.md");await writeFile(file,"# Design\n\nImportant choice.\nA second line.\n");
   const app=await startServer({documentPath:file,port:0,openBrowser:false,dataDir:join(dir,"data")});t.after(()=>app.close().catch(()=>{}));
   let state=await fetch(app.url+"/api/state").then(r=>r.json());assert.equal(state.revision.number,1);
   const eventResponse=await fetch(app.url+"/api/agent-events"),eventReader=eventResponse.body.getReader();await eventReader.read();
   const thread=await fetch(app.url+"/api/threads",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({anchor:{startLine:3,endLine:3,selectedText:"Important choice.",prefix:"# Design\n",suffix:""},comment:"Why?"})}).then(r=>r.json());assert.equal(thread.messages[0].content,"Why?");
+  assert.equal(thread.messages[0].agentStatus,"received");
   const multiline="Important choice.\nA second line.";
   const multilineThread=await fetch(app.url+"/api/threads",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({anchor:{startLine:3,endLine:4,selectedText:multiline,prefix:"# Design\n",suffix:""},comment:"両方の行を確認してください"})}).then(r=>r.json());
   assert.deepEqual({startLine:multilineThread.anchor.startLine,endLine:multilineThread.anchor.endLine,selectedText:multiline},{startLine:3,endLine:4,selectedText:multiline});
@@ -62,6 +152,8 @@ test("end-to-end review API persists, restores, and finishes",async t=>{
   assert.deepEqual(feedbackThread.lineRange,{start:3,end:4});
   const invalid=await fetch(app.url+"/api/threads",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({anchor:{startLine:999,endLine:999},comment:"Out of range"})});assert.equal(invalid.status,400);
   const pushed=new TextDecoder().decode((await eventReader.read()).value);assert.match(pushed,/event: feedback/);assert.match(pushed,/Why\?/);await eventReader.cancel();
+  const processing=await fetch(`${app.url}/api/threads/${thread.id}/messages/${thread.messages[0].id}/agent-status`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({status:"processing"})}).then(r=>r.json());assert.equal(processing.agentStatus,"processing");
+  const completed=await fetch(`${app.url}/api/threads/${thread.id}/messages/${thread.messages[0].id}/agent-status`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({status:"completed"})}).then(r=>r.json());assert.equal(completed.agentStatus,"completed");
   const normalizedResponse=await fetch(app.url+"/api/threads",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({anchor:{startLine:2,endLine:2},comment:"Blank anchor"})});assert.equal(normalizedResponse.status,201);const normalizedThread=await normalizedResponse.json();assert.equal(normalizedThread.anchor.selectedText,"");
   await fetch(`${app.url}/api/threads/${thread.id}/messages`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({author:"agent",content:"Because it is safer."})});
   await writeFile(file,"# Design\n\nA preface.\nImportant choice.\n");await new Promise(r=>setTimeout(r,350));state=await fetch(app.url+"/api/state").then(r=>r.json());assert.equal(state.revision.number,2);assert.equal(state.threads[0].anchor.startLine,4);

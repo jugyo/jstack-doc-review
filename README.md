@@ -55,7 +55,7 @@ curl -X POST "$REVIEW_URL/api/threads/$THREAD_ID/messages" \
   -d '{"author":"agent","content":"The request path must remain non-blocking."}'
 ```
 
-`/api/agent-events` is an SSE stream that emits a complete `review_feedback` event immediately when the reviewer creates a thread or sends a follow-up. An authoring agent should keep this stream open instead of periodically polling.
+`/api/agent-events` は、レビュアーがスレッドを作成またはフォローアップを送信した直後に、完全な `review_feedback` イベントを送る SSE ストリームです。各イベントには `eventId`、`threadId`、`messageId` が含まれます。未完了イベントは永続キューに保持され、再接続後に再送されます。著者エージェントは定期的なポーリングではなくこのストリームを開いたままにし、処理中の各人間メッセージを agent-status エンドポイントで `processing`、`completed`、または `error` に更新してください。
 
 The agent edits Markdown normally. `jstack-md` detects the change, snapshots it, reanchors comments, and refreshes the browser via SSE. The final result is `approved`, `completed-with-open-threads`, or `abandoned`.
 
@@ -69,6 +69,7 @@ jstack-md design.md --provider claude-code --session-id "$SESSION_ID" --cwd "$PW
 
 - `POST /api/threads` — `{ anchor, comment }`
 - `POST /api/threads/:id/messages` — `{ author: "human" | "agent" | "system", content }`
+- `POST /api/threads/:threadId/messages/:messageId/agent-status` — `{ status: "received" | "processing" | "completed" | "error" }`
 - `POST /api/threads/:id/status` — `{ status: "open" | "resolved" }`
 - `GET /api/revisions/:id/diff`
 - `POST /api/revisions/:id/restore`

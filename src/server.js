@@ -16,7 +16,7 @@ export async function startServer(options) {
   const content=await readFile(options.documentPath,"utf8");
   const dataDir=options.dataDir ?? join(homedir(),".jstack-md"); await mkdir(dataDir,{recursive:true,mode:0o700});
   const store=new Store(join(dataDir,"review.db"));
-  const opened=store.open(options.documentPath,content,options.agentBinding); const clients=new Set(),agentClients=new Set();
+  const opened=store.open(options.documentPath,content,options.agentBinding); const clients=new Set(),agentClients=new Set(),agentDelivery=new Map();
   let latestContent=content, writing=false, debounce;
   let complete; const completion=new Promise(r=>complete=r);
   const broadcast=(event,payload={})=>{const msg=`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;for(const res of clients)res.write(msg);};
@@ -43,16 +43,20 @@ export async function startServer(options) {
       }
       if(req.method==="GET"&&url.pathname==="/api/agent-events"){
         res.writeHead(200,{"content-type":"text/event-stream","cache-control":"no-cache","connection":"keep-alive","x-accel-buffering":"no"});
-        res.write(`event: ready\ndata: ${JSON.stringify({sessionId:opened.session.id})}\n\n`);agentClients.add(res);req.on("close",()=>agentClients.delete(res));return;
+        res.write(`event: ready\ndata: ${JSON.stringify({sessionId:opened.session.id})}\n\n`);agentClients.add(res);agentDelivery.set(res,new Set());
+        for(const event of store.agentEvents(opened.document.id)) sendAgentEvent(res,event);
+        req.on("close",()=>{agentClients.delete(res);agentDelivery.delete(res);});return;
       }
       if(req.method==="POST"&&url.pathname==="/api/threads"){
         const data=await body(req),lineCount=latestContent.split("\n").length; if(!data.comment?.trim()||!Number.isInteger(data.anchor?.startLine)||!Number.isInteger(data.anchor?.endLine)||data.anchor.startLine<1||data.anchor.endLine<data.anchor.startLine||data.anchor.endLine>lineCount)return send(res,400,{error:"A valid line range within the document and comment are required"});
         const context=contextFor(latestContent.split("\n"),data.anchor.startLine,data.anchor.endLine);
         const anchor={...data.anchor,selectedText:typeof data.anchor.selectedText==="string"?data.anchor.selectedText:"",prefix:typeof data.anchor.prefix==="string"?data.anchor.prefix:context.prefix,suffix:typeof data.anchor.suffix==="string"?data.anchor.suffix:context.suffix};
-        const thread=store.createThread(opened.document.id,anchor,data.comment);broadcast("thread",{thread});notifyAgents(agentClients,"feedback",feedback(state()));return send(res,201,thread);
+        const thread=store.createThread(opened.document.id,anchor,data.comment);broadcast("thread",{thread});queueFeedback(thread.messages.at(-1).id);return send(res,201,thread);
       }
+      const messageStatus=url.pathname.match(/^\/api\/threads\/([^/]+)\/messages\/([^/]+)\/agent-status$/);
+      if(req.method==="POST"&&messageStatus){const data=await body(req);if(!["received","processing","completed","error"].includes(data.status))return send(res,400,{error:"エージェント状態が不正です"});const message=store.setAgentStatus(opened.document.id,messageStatus[1],messageStatus[2],data.status);if(!message)return send(res,404,{error:"人間のメッセージが見つかりません"});broadcast("message",{threadId:message.threadId,message});return send(res,200,message);}
       const message=url.pathname.match(/^\/api\/threads\/([^/]+)\/messages$/);
-      if(req.method==="POST"&&message){const data=await body(req);if(!["human","agent","system"].includes(data.author)||!data.content?.trim())return send(res,400,{error:"Valid author and content are required"});const msg=store.addMessage(message[1],data.author,data.content);broadcast("message",{threadId:message[1],message:msg});if(data.author==="human")notifyAgents(agentClients,"feedback",feedback(state()));return send(res,201,msg);}
+      if(req.method==="POST"&&message){const data=await body(req);if(!["human","agent","system"].includes(data.author)||!data.content?.trim())return send(res,400,{error:"Valid author and content are required"});if(!store.threadBelongsToDocument(opened.document.id,message[1]))return send(res,404,{error:"Thread not found"});const msg=store.addMessage(message[1],data.author,data.content);broadcast("message",{threadId:message[1],message:msg});if(data.author==="human")queueFeedback(msg.id);return send(res,201,msg);}
       const status=url.pathname.match(/^\/api\/threads\/([^/]+)\/status$/);
       if(req.method==="POST"&&status){const data=await body(req);if(!["open","resolved"].includes(data.status))return send(res,400,{error:"Invalid status"});const thread=store.setThreadStatus(status[1],data.status);broadcast("thread",{thread});return send(res,200,thread);}
       if(req.method==="GET"&&url.pathname==="/api/feedback")return send(res,200,feedback(state()));
@@ -75,7 +79,10 @@ export async function startServer(options) {
   }
   const address=server.address(),url=`http://127.0.0.1:${address.port}`;
   if(options.openBrowser) open(url);
-  return {url,completion,close:async()=>{clearTimeout(debounce);watcher.close();for(const c of clients)c.end();for(const c of agentClients)c.end();await new Promise(r=>server.close(r));store.close();}};
+  return {url,completion,close:async()=>{clearTimeout(debounce);watcher.close();for(const c of clients)c.end();for(const c of agentClients)c.end();agentDelivery.clear();await new Promise(r=>server.close(r));store.close();}};
+
+  function queueFeedback(messageId){const event=store.agentEventForMessage(messageId);if(event)for(const client of agentClients)sendAgentEvent(client,event);}
+  function sendAgentEvent(client,event){const delivered=agentDelivery.get(client);if(!delivered||delivered.has(event.id))return;delivered.add(event.id);client.write(`event: feedback\ndata: ${JSON.stringify({...feedback(state()),eventId:event.id,threadId:event.threadId,messageId:event.messageId})}\n\n`);}
 }
 
 function feedback(s){return {type:"review_feedback",document:s.document.path,revision:s.revision.number,sessionId:s.session.id,threads:s.threads.filter(t=>t.status==="open").map(t=>({id:t.id,quote:t.anchor.selectedText,lineRange:{start:t.anchor.startLine,end:t.anchor.endLine},surroundingContext:{prefix:t.anchor.prefix,suffix:t.anchor.suffix},orphaned:t.orphaned,messages:t.messages}))};}

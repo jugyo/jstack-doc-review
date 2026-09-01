@@ -93,13 +93,15 @@ function threadHtml(thread) {
       <div class="thread-head"><span>${detached}Resolved · ${range}</span><button type="button" data-status="open">Reopen</button></div>
     </article>`;
   }
-  const waiting = thread.messages.at(-1)?.author === "human";
   return `<article class="thread open ${thread.orphaned ? "orphaned" : ""}" data-thread="${thread.id}" data-start-line="${thread.anchor.startLine}" data-end-line="${thread.anchor.endLine}">
     <div class="thread-head"><span>${detached}Open thread · ${range}</span><button type="button" data-status="resolved">Resolve</button></div>
-    ${thread.messages.map(message => `<div class="message ${message.author}"><span class="author">${esc(message.author)}</span><p>${esc(message.content)}</p></div>`).join("")}
-    ${waiting ? '<div class="agent-waiting">••• Agent notified</div>' : ""}
+    ${thread.messages.map(message => `<div class="message ${message.author}"><div class="message-meta"><span class="author">${esc(message.author)}</span>${message.author === "human" && message.agentStatus ? `<span class="message-status ${message.agentStatus}">${statusLabel(message.agentStatus)}</span>` : ""}</div><p>${esc(message.content)}</p></div>`).join("")}
     <form class="reply"><input placeholder="Continue this conversation…" aria-label="Reply"><button type="submit">Reply</button></form>
   </article>`;
+}
+
+function statusLabel(status) {
+  return ({ received: "受信済み", processing: "処理中", completed: "処理完了", error: "処理エラー" })[status] || status;
 }
 
 function toggleThreadHighlight(thread, highlighted) {
@@ -111,7 +113,6 @@ function toggleThreadHighlight(thread, highlighted) {
     if (lineNumber >= startLine && lineNumber <= endLine) line.classList.toggle("thread-hover", highlighted);
   });
 }
-
 function renderHistory() {
   const selected = historyRevisionId || state.revision.id;
   $("#revisionList").innerHTML = [...state.revisions].reverse().map(revision => `<button class="revision-choice ${revision.id === selected ? "selected" : ""}" data-revision="${revision.id}"><strong>Revision ${revision.number}</strong><span>${esc(revision.reason || "Document changed")}</span><span>${new Date(revision.createdAt).toLocaleString()}</span></button>`).join("");
