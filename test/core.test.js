@@ -6,25 +6,65 @@ import { tmpdir } from "node:os";
 import { reanchor } from "../src/anchors.js";
 import { unifiedDiff } from "../src/diff.js";
 import { startServer } from "../src/server.js";
+import { sourceOffsetForMappedText, sourceTextForRange } from "../web/selection.js";
 
 test("reanchors exact text after lines move",()=>{
   const anchor={startLine:2,endLine:2,selectedText:"important sentence",prefix:"title",suffix:"tail"};
   assert.equal(reanchor(anchor,"new\ntitle\nimportant sentence\ntail").startLine,3);
 });
+test("複数行選択をテキストを変えずに再配置する",()=>{
+  const selected="first line\nsecond line";
+  const anchor={startLine:2,endLine:3,selectedText:selected,prefix:"Title",suffix:"After"};
+  const moved=reanchor(anchor,"Title\nintro\nfirst line\nsecond line\nAfter");
+  assert.deepEqual({startLine:moved.startLine,endLine:moved.endLine,selectedText:moved.selectedText},{startLine:3,endLine:4,selectedText:selected});
+});
+test("選択アンカーの前後の空白を保持する",()=>{
+  const selected=" first line\nsecond line ";
+  const moved=reanchor({startLine:1,endLine:2,selectedText:selected,prefix:"",suffix:""},`before\n${selected}\nafter`);
+  assert.equal(moved.selectedText,selected);
+  assert.deepEqual([moved.startLine,moved.endLine],[2,3]);
+});
+test("選択テキストなしの行アンカーを周辺文脈で再配置する",()=>{
+  const anchor={startLine:2,endLine:2,selectedText:"",prefix:"Title",suffix:"Body"};
+  const moved=reanchor(anchor,"Intro\nTitle\n\nBody");
+  assert.deepEqual([moved.startLine,moved.endLine,moved.selectedText],[3,3,""]);
+});
+test("表示変換された複数行選択を原文から組み立てる",()=>{
+  const sourceLines=["- first item","","## after"];
+  assert.equal(sourceTextForRange(sourceLines,1,0,3,sourceLines[2].length),"- first item\n\n## after");
+});
+test("装飾テキストの選択端点を可視範囲へ対応付ける",()=>{
+  const link={sourceStart:0,sourceEnd:29,sourceTextStart:1,sourceTextEnd:7,visibleLength:6};
+  const [start,end]=[sourceOffsetForMappedText(link,0),sourceOffsetForMappedText(link,6)];
+  assert.deepEqual([start,end],[1,7]);
+  assert.equal(sourceTextForRange(["[skills](https://skills.sh/)"],1,start,1,end),"skills");
+});
+test("空行を含む選択アンカーを更新後も複数行で再配置する",()=>{
+  const selected="before\n\nafter";
+  const moved=reanchor({startLine:1,endLine:3,selectedText:selected,prefix:"",suffix:""},"intro\nbefore\n\nafter\nend");
+  assert.deepEqual([moved.startLine,moved.endLine,moved.selectedText],[2,4,selected]);
+});
 test("marks impossible anchors as unresolved",()=>assert.equal(reanchor({startLine:1,endLine:1,selectedText:"gone",prefix:"",suffix:""},"entirely different"),null));
 test("generates a unified diff",()=>{const d=unifiedDiff("a\nb","a\nc");assert.match(d,/^-b$/m);assert.match(d,/^\+c$/m)});
 
 test("end-to-end review API persists, restores, and finishes",async t=>{
-  const dir=await mkdtemp(join(tmpdir(),"jstack-md-test-")),file=join(dir,"design.md");await writeFile(file,"# Design\n\nImportant choice.\n");
+  const dir=await mkdtemp(join(tmpdir(),"jstack-md-test-")),file=join(dir,"design.md");await writeFile(file,"# Design\n\nImportant choice.\nA second line.\n");
   const app=await startServer({documentPath:file,port:0,openBrowser:false,dataDir:join(dir,"data")});t.after(()=>app.close().catch(()=>{}));
   let state=await fetch(app.url+"/api/state").then(r=>r.json());assert.equal(state.revision.number,1);
   const eventResponse=await fetch(app.url+"/api/agent-events"),eventReader=eventResponse.body.getReader();await eventReader.read();
   const thread=await fetch(app.url+"/api/threads",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({anchor:{startLine:3,endLine:3,selectedText:"Important choice.",prefix:"# Design\n",suffix:""},comment:"Why?"})}).then(r=>r.json());assert.equal(thread.messages[0].content,"Why?");
+  const multiline="Important choice.\nA second line.";
+  const multilineThread=await fetch(app.url+"/api/threads",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({anchor:{startLine:3,endLine:4,selectedText:multiline,prefix:"# Design\n",suffix:""},comment:"両方の行を確認してください"})}).then(r=>r.json());
+  assert.deepEqual({startLine:multilineThread.anchor.startLine,endLine:multilineThread.anchor.endLine,selectedText:multiline},{startLine:3,endLine:4,selectedText:multiline});
+  const feedback=await fetch(app.url+"/api/feedback").then(r=>r.json());
+  const feedbackThread=feedback.threads.find(item=>item.id===multilineThread.id);
+  assert.equal(feedbackThread.quote,multiline);
+  assert.deepEqual(feedbackThread.lineRange,{start:3,end:4});
   const invalid=await fetch(app.url+"/api/threads",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({anchor:{startLine:999,endLine:999},comment:"Out of range"})});assert.equal(invalid.status,400);
   const pushed=new TextDecoder().decode((await eventReader.read()).value);assert.match(pushed,/event: feedback/);assert.match(pushed,/Why\?/);await eventReader.cancel();
   const normalizedResponse=await fetch(app.url+"/api/threads",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({anchor:{startLine:2,endLine:2},comment:"Blank anchor"})});assert.equal(normalizedResponse.status,201);const normalizedThread=await normalizedResponse.json();assert.equal(normalizedThread.anchor.selectedText,"");
   await fetch(`${app.url}/api/threads/${thread.id}/messages`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({author:"agent",content:"Because it is safer."})});
   await writeFile(file,"# Design\n\nA preface.\nImportant choice.\n");await new Promise(r=>setTimeout(r,350));state=await fetch(app.url+"/api/state").then(r=>r.json());assert.equal(state.revision.number,2);assert.equal(state.threads[0].anchor.startLine,4);
-  await fetch(`${app.url}/api/revisions/${state.revisions[0].id}/restore`,{method:"POST",headers:{"content-type":"application/json"},body:"{}"});assert.equal(await readFile(file,"utf8"),"# Design\n\nImportant choice.\n");
+  await fetch(`${app.url}/api/revisions/${state.revisions[0].id}/restore`,{method:"POST",headers:{"content-type":"application/json"},body:"{}"});assert.equal(await readFile(file,"utf8"),"# Design\n\nImportant choice.\nA second line.\n");
   const result=await fetch(app.url+"/api/finish",{method:"POST",headers:{"content-type":"application/json"},body:"{}"}).then(r=>r.json());assert.equal(result.result,"completed-with-open-threads");assert.equal(result.threads[0].messages.length,2);
 });

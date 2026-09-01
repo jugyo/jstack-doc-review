@@ -1,3 +1,5 @@
+import { sourceOffsetForMappedText, sourceTextForRange } from "./selection.js";
+
 let state, selection, historyRevisionId;
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value).replace(/[&<>"']/g, character => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[character]));
@@ -15,21 +17,38 @@ async function load(message) {
   if (message) notice(message);
 }
 
-function inline(value) {
-  return esc(value)
-    .replace(/`([^`]+)`/g, "<code>$1</code>")
-    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*([^*]+)\*/g, "<em>$1</em>")
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+function sourceSpan(visible, start, end, textStart = start, textEnd = end) {
+  return `<span data-source-start="${start}" data-source-end="${end}" data-source-text-start="${textStart}" data-source-text-end="${textEnd}">${esc(visible)}</span>`;
+}
+
+function inline(value, sourceOffset = 0) {
+  const pattern = /`([^`]+)`|\*\*([^*]+)\*\*|\*([^*]+)\*|\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
+  let html = "", cursor = 0, match;
+  while ((match = pattern.exec(value))) {
+    if (match.index > cursor) html += sourceSpan(value.slice(cursor, match.index), sourceOffset + cursor, sourceOffset + match.index);
+    const start = sourceOffset + match.index, end = sourceOffset + pattern.lastIndex;
+    if (match[1]) html += `<code>${sourceSpan(match[1], start, end, start + 1, end - 1)}</code>`;
+    else if (match[2]) html += `<strong>${sourceSpan(match[2], start, end, start + 2, end - 2)}</strong>`;
+    else if (match[3]) html += `<em>${sourceSpan(match[3], start, end, start + 1, end - 1)}</em>`;
+    else html += `<a href="${esc(match[5])}" target="_blank" rel="noreferrer">${inline(match[4], start + 1)}</a>`;
+    cursor = pattern.lastIndex;
+  }
+  return html + (cursor < value.length ? sourceSpan(value.slice(cursor), sourceOffset + cursor, sourceOffset + value.length) : "");
 }
 
 function markdownLine(line, inCode) {
   if (/^```/.test(line)) return { html: "", code: !inCode };
-  if (inCode) return { html: esc(line), cls: "block-code", code: inCode };
+  if (inCode) return { html: sourceSpan(line, 0, line.length), cls: "block-code", code: inCode };
   let match;
-  if (match = line.match(/^(#{1,3})\s+(.*)$/)) return { html: `<h${match[1].length}>${inline(match[2])}</h${match[1].length}>`, code: inCode };
-  if (match = line.match(/^>\s?(.*)$/)) return { html: inline(match[1]), cls: "quote", code: inCode };
-  if (match = line.match(/^[-*+]\s+(.*)$/)) return { html: "• " + inline(match[1]), cls: "list", code: inCode };
+  if (match = line.match(/^(#{1,3})(\s+)(.*)$/)) {
+    const prefix = match[1].length + match[2].length;
+    return { html: `<h${match[1].length}>${sourceSpan(match[3], 0, line.length, prefix, line.length)}</h${match[1].length}>`, code: inCode };
+  }
+  if (match = line.match(/^(>\s?)(.*)$/)) return { html: sourceSpan(match[2], 0, line.length, match[1].length, line.length), cls: "quote", code: inCode };
+  if (match = line.match(/^([-*+])(\s+)(.*)$/)) {
+    const prefix = match[1].length + match[2].length;
+    return { html: sourceSpan("• ", 0, prefix, 0, prefix) + inline(match[3], prefix), cls: "list", code: inCode };
+  }
   if (match = line.match(/^\d+\.\s+(.*)$/)) return { html: inline(line), cls: "list", code: inCode };
   return { html: inline(line), code: inCode };
 }
@@ -115,7 +134,7 @@ function openLineComposer(line, source) {
   composer.hidden = false;
   composer.style.left = `${Math.min(innerWidth - 390, Math.max(10, box.right + 8))}px`;
   composer.style.top = `${Math.min(innerHeight - 190, Math.max(10, box.top))}px`;
-  composer.querySelector(".selection").textContent = text.trim() ? `“${text}” · line ${line}` : `Line ${line}`;
+  showSelection(composer, text, line, line);
   composer.querySelector("textarea").focus();
 }
 
@@ -123,22 +142,61 @@ document.addEventListener("mouseup", event => {
   if (event.target.closest(".thread,#composer,header,dialog")) return;
   const selected = getSelection();
   if (!selected || selected.isCollapsed) return;
-  const text = selected.toString().trim();
-  const start = elLine(selected.anchorNode);
-  const end = elLine(selected.focusNode);
-  if (!text || !start || !end) return;
+  const range = selected.getRangeAt(0);
+  const start = elLine(range.startContainer);
+  const end = elLine(range.endContainer);
+  if (!selected.toString().trim() || !start || !end) return;
   const a = Math.min(start, end), b = Math.max(start, end), lines = state.document.content.split("\n");
+  const startBody = document.querySelector(`[data-line="${a}"] .line-body`);
+  const endBody = document.querySelector(`[data-line="${b}"] .line-body`);
+  const startOffset = sourceOffsetAt(range.startContainer, range.startOffset, startBody, lines[a - 1]);
+  const endOffset = sourceOffsetAt(range.endContainer, range.endOffset, endBody, lines[b - 1]);
+  const text = sourceTextForRange(lines, a, startOffset, b, endOffset);
   selection = { startLine: a, endLine: b, selectedText: text, prefix: lines.slice(Math.max(0, a - 3), a - 1).join("\n"), suffix: lines.slice(b, b + 2).join("\n") };
-  const box = selected.getRangeAt(0).getBoundingClientRect(), composer = $("#composer");
+  const box = range.getBoundingClientRect(), composer = $("#composer");
   composer.hidden = false;
   composer.style.left = `${Math.min(innerWidth - 390, Math.max(10, box.left))}px`;
   composer.style.top = `${Math.min(innerHeight - 190, box.bottom + 10)}px`;
-  composer.querySelector(".selection").textContent = `“${text}” · lines ${a}–${b}`;
+  showSelection(composer, text, a, b);
   composer.querySelector("textarea").focus();
 });
 
+function showSelection(composer, text, startLine, endLine) {
+  const label = startLine === endLine ? `line ${startLine}` : `lines ${startLine}–${endLine}`;
+  const preview = composer.querySelector(".selection");
+  preview.textContent = text.trim() ? text : "選択テキストなし";
+  preview.dataset.range = label;
+  preview.setAttribute("aria-label", `${label}: ${text}`);
+}
+
 function elLine(node) {
   return node?.nodeType === 3 ? node.parentElement?.closest(".doc-line")?.dataset.line : node?.closest?.(".doc-line")?.dataset.line;
+}
+
+function sourceOffsetAt(node, offset, body, sourceLine = "") {
+  if (!body || sourceLine === "" || sourceLine === "\r") return 0;
+  if (node?.nodeType === 3) {
+    const mapped = node.parentElement?.closest("[data-source-start]");
+    if (mapped) return mappedOffset(mapped, offset);
+  }
+  if (node?.nodeType === 1 && node.matches("[data-source-start]")) {
+    return offset === 0 ? Number(node.dataset.sourceStart) : Number(node.dataset.sourceEnd);
+  }
+  if (node?.childNodes?.length) {
+    const child = node.childNodes[offset] || node.lastChild;
+    if (child) return sourceOffsetAt(child, offset === node.childNodes.length ? child.childNodes?.length || child.textContent.length : 0, body, sourceLine);
+  }
+  return offset ? sourceLine.length : 0;
+}
+
+function mappedOffset(mapped, offset) {
+  return sourceOffsetForMappedText({
+    sourceStart: Number(mapped.dataset.sourceStart),
+    sourceEnd: Number(mapped.dataset.sourceEnd),
+    sourceTextStart: Number(mapped.dataset.sourceTextStart),
+    sourceTextEnd: Number(mapped.dataset.sourceTextEnd),
+    visibleLength: mapped.textContent.length
+  }, offset);
 }
 
 $("#composer [data-cancel]").onclick = () => $("#composer").hidden = true;

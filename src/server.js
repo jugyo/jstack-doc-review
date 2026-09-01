@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { join, basename } from "node:path";
 import { execFile } from "node:child_process";
 import { Store } from "./store.js";
-import { reanchor } from "./anchors.js";
+import { contextFor, reanchor } from "./anchors.js";
 import { unifiedDiff } from "./diff.js";
 
 const mime={".js":"text/javascript; charset=utf-8",".css":"text/css; charset=utf-8",".html":"text/html; charset=utf-8"};
@@ -36,7 +36,7 @@ export async function startServer(options) {
     try {
       const url=new URL(req.url,"http://localhost");
       if(req.method==="GET"&&url.pathname==="/")return send(res,200,await readFile(new URL("../web/index.html",import.meta.url),"utf8"),mime[".html"]);
-      if(req.method==="GET"&&["/app.js","/style.css","/agent.css","/history.css"].includes(url.pathname))return send(res,200,await readFile(new URL(`../web${url.pathname}`,import.meta.url),"utf8"),mime[url.pathname.slice(url.pathname.lastIndexOf("."))]);
+      if(req.method==="GET"&&["/app.js","/selection.js","/style.css","/agent.css","/history.css"].includes(url.pathname))return send(res,200,await readFile(new URL(`../web${url.pathname}`,import.meta.url),"utf8"),mime[url.pathname.slice(url.pathname.lastIndexOf("."))]);
       if(req.method==="GET"&&url.pathname==="/api/state")return send(res,200,state());
       if(req.method==="GET"&&url.pathname==="/events"){
         res.writeHead(200,{"content-type":"text/event-stream","cache-control":"no-cache","connection":"keep-alive"});res.write("event: connected\ndata: {}\n\n");clients.add(res);req.on("close",()=>clients.delete(res));return;
@@ -47,7 +47,8 @@ export async function startServer(options) {
       }
       if(req.method==="POST"&&url.pathname==="/api/threads"){
         const data=await body(req),lineCount=latestContent.split("\n").length; if(!data.comment?.trim()||!Number.isInteger(data.anchor?.startLine)||!Number.isInteger(data.anchor?.endLine)||data.anchor.startLine<1||data.anchor.endLine<data.anchor.startLine||data.anchor.endLine>lineCount)return send(res,400,{error:"A valid line range within the document and comment are required"});
-        const anchor={...data.anchor,selectedText:typeof data.anchor.selectedText==="string"?data.anchor.selectedText:"",prefix:typeof data.anchor.prefix==="string"?data.anchor.prefix:"",suffix:typeof data.anchor.suffix==="string"?data.anchor.suffix:""};
+        const context=contextFor(latestContent.split("\n"),data.anchor.startLine,data.anchor.endLine);
+        const anchor={...data.anchor,selectedText:typeof data.anchor.selectedText==="string"?data.anchor.selectedText:"",prefix:typeof data.anchor.prefix==="string"?data.anchor.prefix:context.prefix,suffix:typeof data.anchor.suffix==="string"?data.anchor.suffix:context.suffix};
         const thread=store.createThread(opened.document.id,anchor,data.comment);broadcast("thread",{thread});notifyAgents(agentClients,"feedback",feedback(state()));return send(res,201,thread);
       }
       const message=url.pathname.match(/^\/api\/threads\/([^/]+)\/messages$/);
