@@ -1,0 +1,17 @@
+{
+  "name": "jstack-md",
+  "version": "0.1.0",
+  "description": "Browser-first review loop for AI-authored Markdown",
+  "type": "module",
+  "bin": {
+    "jstack-md": "./bin/jstack-md.js"
+  },
+  "scripts": {
+    "start": "node bin/jstack-md.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "license": "MIT"
+}

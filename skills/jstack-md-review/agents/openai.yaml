@@ -1,0 +1,4 @@
+interface:
+  display_name: "jstack-md Review"
+  short_description: "Review Markdown with its authoring agent"
+  default_prompt: "Review this Markdown in jstack-md and handle browser feedback until completion."

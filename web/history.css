@@ -1,0 +1,40 @@
+#historyDialog {
+  width: min(1060px, calc(100vw - 48px));
+  height: min(720px, calc(100vh - 48px));
+  max-width: none;
+  padding: 0;
+  overflow: hidden;
+}
+
+.history-title {
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 22px;
+  border-bottom: 1px solid var(--line);
+}
+
+.history-title h2 { margin: 0; font: 700 22px Georgia, serif; }
+.history-title p { margin: 2px 0 0; color: var(--muted); font-size: 11px; }
+.history-layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); height: calc(100% - 72px); }
+#revisionList { overflow: auto; padding: 10px; border-right: 1px solid var(--line); background: #f7f5f0; }
+.revision-choice { width: 100%; display: block; margin-bottom: 5px; padding: 11px 12px; text-align: left; border-color: transparent; background: transparent; }
+.revision-choice:hover { background: #eeebe4; }
+.revision-choice.selected { color: white; background: var(--ink); }
+.revision-choice strong, .revision-choice span { display: block; }
+.revision-choice span { margin-top: 2px; overflow: hidden; color: var(--muted); font-size: 11px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
+.revision-choice.selected span { color: #c9c7c1; }
+.history-detail { min-width: 0; display: flex; flex-direction: column; }
+.history-detail-head { min-height: 72px; display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 12px 18px; border-bottom: 1px solid var(--line); }
+.history-detail-head strong, .history-detail-head span { display: block; }
+.history-detail-head span { color: var(--muted); font-size: 11px; }
+#historyDiff { flex: 1; margin: 0; padding: 18px; overflow: auto; background: #292a2d; color: #ddd; font: 12px/1.55 ui-monospace, SFMono-Regular, monospace; }
+#historyDiff .add { color: #85d7a2; }
+#historyDiff .del { color: #f2938c; }
+
+@media (max-width: 700px) {
+  #historyDialog { width: calc(100vw - 16px); height: calc(100vh - 16px); }
+  .history-layout { grid-template-columns: 130px minmax(0, 1fr); }
+  .history-detail-head { align-items: flex-start; flex-direction: column; }
+}
