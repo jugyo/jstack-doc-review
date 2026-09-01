@@ -1,9 +1,9 @@
 ---
-name: jstack-md-review
+name: jstack-md
 description: Review a local AI-authored Markdown document in the jstack-md browser UI while preserving the current authoring-agent workflow. Use when the user asks to open, review, or iterate on a Markdown file with jstack-md.
 ---
 
-# jstack-md review
+# jstack-md
 
 Use the current agent session as the document's authoring agent. Do not hand feedback to a separate LLM session.
 
