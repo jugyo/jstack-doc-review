@@ -4,7 +4,7 @@ export function contextFor(lines, startLine, endLine) {
 
 export function reanchor(anchor, content) {
   const lines = content.split("\n");
-  const selected = anchor.selectedText.trim();
+  const selected = typeof anchor.selectedText === "string" ? anchor.selectedText.trim() : "";
   if (selected) {
     const indexes=[]; let at=0;
     while ((at=content.indexOf(selected,at))>=0) { indexes.push(at); at += Math.max(1,selected.length); }
@@ -14,7 +14,9 @@ export function reanchor(anchor, content) {
         const proximity=Math.abs(line-anchor.startLine);
         const before=content.slice(Math.max(0,index-500),index);
         const after=content.slice(index+selected.length,index+selected.length+500);
-        const context=(anchor.prefix&&before.endsWith(anchor.prefix)?1000:0)+(anchor.suffix&&after.startsWith(anchor.suffix)?1000:0);
+        const prefix=typeof anchor.prefix === "string" ? anchor.prefix : "";
+        const suffix=typeof anchor.suffix === "string" ? anchor.suffix : "";
+        const context=(prefix&&before.endsWith(prefix)?1000:0)+(suffix&&after.startsWith(suffix)?1000:0);
         return {index,line,score:context-proximity};
       }).sort((a,b)=>b.score-a.score)[0];
       const endLine=scored.line+selected.split("\n").length-1;

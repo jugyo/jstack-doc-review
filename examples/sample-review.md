@@ -30,4 +30,4 @@ type DeliveryResult = {
 - How long should completed delivery records be retained?
 - Which failures require operator notification?
 
-Select any sentence or click its line number to start a review thread.
+Select any sentence or hover a line to start a review thread.

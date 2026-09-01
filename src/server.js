@@ -46,8 +46,9 @@ export async function startServer(options) {
         res.write(`event: ready\ndata: ${JSON.stringify({sessionId:opened.session.id})}\n\n`);agentClients.add(res);req.on("close",()=>agentClients.delete(res));return;
       }
       if(req.method==="POST"&&url.pathname==="/api/threads"){
-        const data=await body(req); if(!data.comment?.trim()||!data.anchor?.selectedText?.trim())return send(res,400,{error:"Selection and comment are required"});
-        const thread=store.createThread(opened.document.id,data.anchor,data.comment);broadcast("thread",{thread});notifyAgents(agentClients,"feedback",feedback(state()));return send(res,201,thread);
+        const data=await body(req),lineCount=latestContent.split("\n").length; if(!data.comment?.trim()||!Number.isInteger(data.anchor?.startLine)||!Number.isInteger(data.anchor?.endLine)||data.anchor.startLine<1||data.anchor.endLine<data.anchor.startLine||data.anchor.endLine>lineCount)return send(res,400,{error:"A valid line range within the document and comment are required"});
+        const anchor={...data.anchor,selectedText:typeof data.anchor.selectedText==="string"?data.anchor.selectedText:"",prefix:typeof data.anchor.prefix==="string"?data.anchor.prefix:"",suffix:typeof data.anchor.suffix==="string"?data.anchor.suffix:""};
+        const thread=store.createThread(opened.document.id,anchor,data.comment);broadcast("thread",{thread});notifyAgents(agentClients,"feedback",feedback(state()));return send(res,201,thread);
       }
       const message=url.pathname.match(/^\/api\/threads\/([^/]+)\/messages$/);
       if(req.method==="POST"&&message){const data=await body(req);if(!["human","agent","system"].includes(data.author)||!data.content?.trim())return send(res,400,{error:"Valid author and content are required"});const msg=store.addMessage(message[1],data.author,data.content);broadcast("message",{threadId:message[1],message:msg});if(data.author==="human")notifyAgents(agentClients,"feedback",feedback(state()));return send(res,201,msg);}
