@@ -5,17 +5,17 @@ import { access } from "node:fs/promises";
 import { constants } from "node:fs";
 import { startServer } from "../src/server.js";
 
-const usage = `jstack-md <document.md> [options]
+const usage = `jstack-md <document.md> [オプション]
 
-Options:
-  --port <number>       Port (default: an available port)
-  --no-open             Do not open the browser
-  --data-dir <path>     Data directory (default: ~/.jstack-md)
-  --provider <name>     Agent provider name
-  --session-id <id>     Authoring agent session id
-  --cwd <path>          Agent working directory
-  --json                Print only the final review result as JSON
-  -h, --help            Show this help`;
+オプション:
+  --port <number>       ポート（既定値: 空きポート）
+  --no-open             ブラウザを開かない
+  --data-dir <path>     データディレクトリ（既定値: ~/.jstack-md）
+  --provider <name>     エージェントのプロバイダー名
+  --session-id <id>     作成エージェントのセッション ID
+  --cwd <path>          エージェントの作業ディレクトリ
+  --json                最終的な対話結果だけを JSON で出力
+  -h, --help            このヘルプを表示`;
 
 let parsed;
 try {
@@ -39,9 +39,9 @@ if (parsed.values.help || parsed.positionals.length !== 1) {
 
 const documentPath = resolve(parsed.positionals[0]);
 try { await access(documentPath, constants.R_OK | constants.W_OK); }
-catch { console.error(`Cannot read and write Markdown file: ${documentPath}`); process.exit(1); }
+catch { console.error(`Markdown ファイルを読み書きできません: ${documentPath}`); process.exit(1); }
 if (!documentPath.toLowerCase().endsWith(".md")) {
-  console.error("jstack-md only reviews .md files"); process.exit(2);
+  console.error("jstack-md は .md ファイルのみ扱います"); process.exit(2);
 }
 
 const app = await startServer({
@@ -56,7 +56,7 @@ const app = await startServer({
   } : null
 });
 
-if (!parsed.values.json) console.error(`Reviewing ${documentPath}\n${app.url}`);
+if (!parsed.values.json) console.error(`文書を開きました: ${documentPath}\n${app.url}`);
 const shutdown = () => app.close().finally(() => process.exit(130));
 process.once("SIGINT", shutdown); process.once("SIGTERM", shutdown);
 const result = await app.completion;

@@ -80,7 +80,7 @@ function render() {
   const attached = comments.filter(thread => !thread.orphaned && thread.anchor.type !== "document");
   const commentHtml = (documentComments.length ? `<div class="document-threads">${documentComments.map(threadHtml).join("")}</div>` : "") + attached.map(threadHtml).join("") + (detached.length ? `<div class="detached-threads"><div class="detached-label">Detached comments</div>${detached.map(threadHtml).join("")}</div>` : "");
   const globalComposer = `<form class="global-composer" id="globalComposer"><textarea aria-label="Comment" placeholder="Write a comment…" rows="3"></textarea><div class="global-composer-actions"><button type="submit" class="primary">Send</button></div></form>`;
-  const railHeader = `<div class="rail-heading"><div><span class="rail-kicker">REVIEW</span><strong>Comments</strong></div><span class="thread-count">${comments.length} comment${comments.length === 1 ? "" : "s"}</span></div>`;
+  const railHeader = `<div class="rail-heading"><div><span class="rail-kicker">CONVERSATION</span><strong>Comments</strong></div><span class="thread-count">${comments.length} comment${comments.length === 1 ? "" : "s"}</span></div>`;
   const emptyRail = commentHtml ? "" : '<div class="empty-rail">No comments yet</div>';
   $("#document").innerHTML = `<div class="document-layout"><div class="document-content">${documentHtml}</div><div class="comment-rail">${globalComposer}${railHeader}${commentHtml}${emptyRail}</div></div>`;
   renderHistory();
@@ -91,7 +91,7 @@ function render() {
 
 function threadHtml(thread) {
   const documentWide = thread.anchor.type === "document";
-  const range = documentWide ? "Global" : thread.anchor.startLine === thread.anchor.endLine
+  const range = documentWide ? "Document" : thread.anchor.startLine === thread.anchor.endLine
     ? `line ${thread.anchor.startLine}`
     : `lines ${thread.anchor.startLine}–${thread.anchor.endLine}`;
   const detached = thread.orphaned ? "Detached · " : "";
@@ -101,7 +101,7 @@ function threadHtml(thread) {
     </article>`;
   }
   return `<article class="thread open ${thread.orphaned ? "orphaned" : ""}" data-thread="${thread.id}" data-start-line="${thread.anchor.startLine}" data-end-line="${thread.anchor.endLine}">
-    <div class="thread-head"><span>${detached}Open thread · ${range}</span><button type="button" data-status="resolved">Resolve</button></div>
+    <div class="thread-head"><span>${detached}Conversation · ${range}</span><button type="button" data-status="resolved">Resolve</button></div>
     ${thread.messages.map(message => `<div class="message ${message.author}"><div class="message-meta"><span class="author">${esc(message.author)}</span>${message.author === "human" && message.agentStatus ? `<span class="message-status ${message.agentStatus}">${statusLabel(message.agentStatus)}</span>` : ""}</div><p>${esc(message.content)}</p></div>`).join("")}
     <form class="reply"><input placeholder="Continue this conversation…" aria-label="Reply"><button type="submit">Reply</button></form>
   </article>`;
@@ -180,7 +180,7 @@ document.addEventListener("mouseup", event => {
 });
 
 function showSelection(composer, text, startLine, endLine) {
-  const label = startLine === endLine ? `line ${startLine}` : `lines ${startLine}–${endLine}`;
+  const label = startLine == null ? "Document" : startLine === endLine ? `line ${startLine}` : `lines ${startLine}–${endLine}`;
   const preview = composer.querySelector(".selection");
   preview.textContent = text.trim() ? text : "No text selected";
   preview.dataset.range = label;
@@ -287,10 +287,11 @@ $("#restoreRevision").onclick = async event => {
   historyRevisionId = null;
   await load("Revision restored and saved as a new revision.");
 };
-$("#finish").onclick = () => finish("finish");
-async function finish(result) {
-  const output = await api("/api/finish", { method: "POST", body: JSON.stringify({ result }) });
-  document.body.innerHTML = `<div class="done"><h1>Review ${esc(output.result)}</h1><p>You can close this window and return to the authoring agent.</p></div>`;
+$("#finish").onclick = () => finish();
+async function finish() {
+  const output = await api("/api/finish", { method: "POST", body: "{}" });
+  document.body.innerHTML = `<div class="done"><h1>Conversation finished</h1><p>You can close this window and return to the authoring agent.</p></div>`;
+  window.close();
 }
 function notice(message) { $("#notice").textContent = message; setTimeout(() => $("#notice").textContent = "", 3500); }
 

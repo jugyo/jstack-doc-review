@@ -1,6 +1,6 @@
 # Event delivery design
 
-This sample document exercises the main **jstack-md** review workflow.
+This sample document exercises the main **jstack-md** document conversation.
 
 ## Background
 
@@ -30,4 +30,4 @@ type DeliveryResult = {
 - How long should completed delivery records be retained?
 - Which failures require operator notification?
 
-Select any sentence or hover a line to start a review thread.
+Select any sentence or hover a line to start a conversation. You can also ask a question about the whole document.

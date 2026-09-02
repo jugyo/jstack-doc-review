@@ -19,6 +19,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS agent_events(id TEXT PRIMARY KEY,message_id TEXT UNIQUE NOT NULL,status TEXT NOT NULL,created_at TEXT NOT NULL,FOREIGN KEY(message_id) REFERENCES messages(id));
       CREATE TABLE IF NOT EXISTS review_rounds(id TEXT PRIMARY KEY,document_id TEXT NOT NULL,base_revision_id TEXT NOT NULL,result_revision_id TEXT,started_at TEXT NOT NULL,completed_at TEXT,FOREIGN KEY(document_id) REFERENCES documents(id));`);
     this.ensureColumn("messages", "agent_status", "TEXT");
+    this.migrateSessionResults();
     this.migrateAgentMessages();
   }
 
@@ -28,7 +29,7 @@ export class Store {
       doc = { id: randomUUID(), path, current_revision_id: null };
       this.db.prepare("INSERT INTO documents(id,path) VALUES(?,?)").run(doc.id, path);
     }
-    const revision = this.addRevision(doc.id, content, "Review started", []);
+    const revision = this.addRevision(doc.id, content, "Conversation started", []);
     const session = { id: randomUUID(), documentId: doc.id, status: "open", startedAt: now() };
     this.db.prepare("INSERT INTO sessions(id,document_id,status,started_at,agent_binding) VALUES(?,?,?,?,?)")
       .run(session.id, doc.id, session.status, session.startedAt, binding ? JSON.stringify(binding) : null);
@@ -37,7 +38,7 @@ export class Store {
     return { document: { id: doc.id, path }, session, revision };
   }
 
-  addRevision(documentId, content, reason = "Document changed", sourceThreadIds = []) {
+  addRevision(documentId, content, reason = "文書が変更されました", sourceThreadIds = []) {
     const hash = createHash("sha256").update(content).digest("hex");
     const existing = this.db.prepare("SELECT * FROM revisions WHERE document_id=? AND content_hash=? ORDER BY number DESC LIMIT 1").get(documentId, hash);
     const current = this.currentRevision(documentId);
@@ -50,6 +51,10 @@ export class Store {
   }
 
   currentRevision(documentId) { return this.db.prepare("SELECT r.* FROM documents d JOIN revisions r ON r.id=d.current_revision_id WHERE d.id=?").get(documentId); }
+  session(id) {
+    const row = this.db.prepare("SELECT * FROM sessions WHERE id=?").get(id);
+    return row && { id: row.id, documentId: row.document_id, status: row.status, startedAt: row.started_at, completedAt: row.completed_at, result: row.result };
+  }
   revision(row) { return { id: row.id, number: row.number, content: row.content, createdAt: row.created_at, reason: row.reason, sourceThreadIds: JSON.parse(row.source_thread_ids) }; }
   revisions(documentId) { return this.db.prepare("SELECT * FROM revisions WHERE document_id=? ORDER BY number").all(documentId).map(r => this.revision(r)); }
   revisionById(id) { const r = this.db.prepare("SELECT * FROM revisions WHERE id=?").get(id); return r && this.revision(r); }
@@ -85,7 +90,7 @@ export class Store {
     this.db.prepare("UPDATE agent_events SET status=? WHERE message_id=?").run(eventStatus,messageId);
     return {...message,agentStatus:status};
   }
-  finish(sessionId, result) { const at=now(); this.db.prepare("UPDATE sessions SET status='finished',completed_at=?,result=? WHERE id=?").run(at,result,sessionId); return at; }
+  finish(sessionId) { const at=now(); this.db.prepare("UPDATE sessions SET status='finished',completed_at=?,result='finished' WHERE id=?").run(at,sessionId); return at; }
   close() { this.db.close(); }
   ensureColumn(table, column, definition) {
     const columns = this.db.prepare(`PRAGMA table_info(${table})`).all();
@@ -96,5 +101,8 @@ export class Store {
     const messages = this.db.prepare("SELECT m.id,m.created_at createdAt FROM messages m LEFT JOIN agent_events e ON e.message_id=m.id WHERE m.author='human' AND e.id IS NULL").all();
     const insert = this.db.prepare("INSERT OR IGNORE INTO agent_events VALUES(?,?,?,?)");
     for (const message of messages) insert.run(randomUUID(),message.id,"pending",message.createdAt);
+  }
+  migrateSessionResults() {
+    this.db.prepare("UPDATE sessions SET result='finished' WHERE result IS NOT NULL").run();
   }
 }

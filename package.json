@@ -1,7 +1,7 @@
 {
   "name": "jstack-md",
   "version": "0.1.0",
-  "description": "Browser-first review loop for AI-authored Markdown",
+  "description": "Browser-first document conversation for AI-authored Markdown",
   "type": "module",
   "bin": {
     "jstack-md": "./bin/jstack-md.js"

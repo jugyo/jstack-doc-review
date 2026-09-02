@@ -136,7 +136,7 @@ test("既存 DB の human message を受信済みキューへ移行する", asyn
   await reader.cancel();
 });
 
-test("end-to-end review API persists, restores, and finishes",async t=>{
+test("文書対話 API が永続化・復元・終了まで動作する",async t=>{
   const dir=await mkdtemp(join(tmpdir(),"jstack-md-test-")),file=join(dir,"design.md");await writeFile(file,"# Design\n\nImportant choice.\nA second line.\n");
   const app=await startServer({documentPath:file,port:0,openBrowser:false,dataDir:join(dir,"data")});t.after(()=>app.close().catch(()=>{}));
   let state=await fetch(app.url+"/api/state").then(r=>r.json());assert.equal(state.revision.number,1);
@@ -147,6 +147,7 @@ test("end-to-end review API persists, restores, and finishes",async t=>{
   const multilineThread=await fetch(app.url+"/api/threads",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({anchor:{startLine:3,endLine:4,selectedText:multiline,prefix:"# Design\n",suffix:""},comment:"両方の行を確認してください"})}).then(r=>r.json());
   assert.deepEqual({startLine:multilineThread.anchor.startLine,endLine:multilineThread.anchor.endLine,selectedText:multiline},{startLine:3,endLine:4,selectedText:multiline});
   const feedback=await fetch(app.url+"/api/feedback").then(r=>r.json());
+  assert.equal(feedback.type,"document_feedback");
   const feedbackThread=feedback.threads.find(item=>item.id===multilineThread.id);
   assert.equal(feedbackThread.quote,multiline);
   assert.deepEqual(feedbackThread.lineRange,{start:3,end:4});
@@ -169,5 +170,5 @@ test("end-to-end review API persists, restores, and finishes",async t=>{
   await writeFile(file,"# Design\n\nA preface.\nImportant choice.\n");await new Promise(r=>setTimeout(r,350));state=await fetch(app.url+"/api/state").then(r=>r.json());assert.equal(state.revision.number,2);assert.equal(state.threads[0].anchor.startLine,4);
   const persistedDocumentThread=state.threads.find(item=>item.id===documentThread.id);assert.deepEqual(persistedDocumentThread.anchor,{type:"document"});assert.equal(persistedDocumentThread.orphaned,false);
   await fetch(`${app.url}/api/revisions/${state.revisions[0].id}/restore`,{method:"POST",headers:{"content-type":"application/json"},body:"{}"});assert.equal(await readFile(file,"utf8"),"# Design\n\nImportant choice.\nA second line.\n");
-  const result=await fetch(app.url+"/api/finish",{method:"POST",headers:{"content-type":"application/json"},body:"{}"}).then(r=>r.json());assert.equal(result.result,"completed-with-open-threads");assert.equal(result.threads[0].messages.length,2);
+  const result=await fetch(app.url+"/api/finish",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({result:"ignored"})}).then(r=>r.json());assert.equal(result.result,"finished");assert.equal(result.threads[0].messages.length,2);assert.equal((await fetch(app.url+"/api/state").then(r=>r.json())).session.status,"finished");
 });
