@@ -6,18 +6,18 @@ import { constants } from "node:fs";
 import { startServer } from "../src/server.js";
 import { resolveDocument } from "../src/document.js";
 
-const usage = `jstack-md <document.md> [オプション]
+const usage = `jstack-md <document.md> [options]
 
-オプション:
-  --port <number>       ポート（既定値: 空きポート）
-  --no-open             ブラウザを開かない
-  --data-dir <path>     データディレクトリ（既定値: ~/.jstack-md）
+Options:
+  --port <number>       Port (default: an available port)
+  --no-open             Do not open the browser
+  --data-dir <path>     Data directory (default: ~/.jstack-md)
   --text-file <path>    Long text to save as Markdown when no Markdown is found
-  --provider <name>     エージェントのプロバイダー名
-  --session-id <id>     作成エージェントのセッション ID
-  --cwd <path>          エージェントの作業ディレクトリ
-  --json                最終的な対話結果だけを JSON で出力
-  -h, --help            このヘルプを表示`;
+  --provider <name>     Agent provider name
+  --session-id <id>     Authoring agent session ID
+  --cwd <path>          Agent working directory
+  --json                Output only the final conversation result as JSON
+  -h, --help            Show this help`;
 
 let parsed;
 try {
@@ -55,9 +55,9 @@ const documentPath = document.path;
 try {
   await access(documentPath, constants.R_OK | constants.W_OK);
 }
-catch { console.error(`Markdown ファイルを読み書きできません: ${documentPath}`); process.exit(1); }
+catch { console.error(`Unable to read or write Markdown file: ${documentPath}`); process.exit(1); }
 if (!documentPath.toLowerCase().endsWith(".md")) {
-  console.error("jstack-md は .md ファイルのみ扱います"); process.exit(2);
+  console.error("jstack-md only supports .md files"); process.exit(2);
 }
 
 const app = await startServer({
@@ -75,7 +75,7 @@ const app = await startServer({
 if (!parsed.values.json) {
   if (document.source === "latest-markdown") console.error(`Selected latest Markdown: ${documentPath}`);
   if (document.source === "long-text") console.error(`Saved long text as Markdown: ${documentPath}`);
-  console.error(`文書を開きました: ${documentPath}\n${app.url}`);
+  console.error(`Opened document: ${documentPath}\n${app.url}`);
 }
 const shutdown = () => app.close().finally(() => process.exit(130));
 process.once("SIGINT", shutdown); process.once("SIGTERM", shutdown);

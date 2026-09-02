@@ -1,4 +1,4 @@
 interface:
   display_name: "jstack-md"
-  short_description: "作成エージェントと Markdown を対話する"
-  default_prompt: "この Markdown を jstack-md で開き、ブラウザから届く質問やコメントに対応してください。"
+  short_description: "Interact with Markdown alongside the authoring agent"
+  default_prompt: "Open this Markdown file with jstack-md and respond to questions or comments received in the browser."

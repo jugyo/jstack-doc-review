@@ -10,7 +10,7 @@ import { unifiedDiff } from "./diff.js";
 
 const mime={".js":"text/javascript; charset=utf-8",".css":"text/css; charset=utf-8",".html":"text/html; charset=utf-8"};
 const send=(res,status,data,type="application/json; charset=utf-8")=>{res.writeHead(status,{"content-type":type,"cache-control":"no-store","x-content-type-options":"nosniff"});res.end(type.startsWith("application/json")?JSON.stringify(data):data);};
-const body=async req=>{const chunks=[];for await(const c of req)chunks.push(c);if(Buffer.concat(chunks).length>1_000_000)throw new Error("リクエストが大きすぎます");return JSON.parse(Buffer.concat(chunks).toString()||"{}");};
+const body=async req=>{const chunks=[];for await(const c of req)chunks.push(c);if(Buffer.concat(chunks).length>1_000_000)throw new Error("Request body is too large");return JSON.parse(Buffer.concat(chunks).toString()||"{}");};
 
 export async function startServer(options) {
   const content=await readFile(options.documentPath,"utf8");
@@ -24,7 +24,7 @@ export async function startServer(options) {
     product:"jstack-md",document:{...opened.document,name:basename(options.documentPath),content:latestContent},session:store.session(opened.session.id),
     revision:store.revision(store.currentRevision(opened.document.id)),revisions:store.revisions(opened.document.id).map(({content,...r})=>r),threads:store.threads(opened.document.id),agentBinding:options.agentBinding
   });
-  const capture=async(reason="文書が変更されました",sourceThreadIds=[])=>{
+  const capture=async(reason="Document changed",sourceThreadIds=[])=>{
     const next=await readFile(options.documentPath,"utf8"); if(next===latestContent)return;
     latestContent=next; const revision=store.addRevision(opened.document.id,next,reason,sourceThreadIds);
     for(const thread of store.threads(opened.document.id)){const anchor=reanchor(thread.anchor,next);store.updateAnchor(thread.id,anchor??thread.anchor,!anchor);}
@@ -54,21 +54,21 @@ export async function startServer(options) {
         const thread=store.createThread(opened.document.id,anchor,data.comment);broadcast("thread",{thread});queueFeedback(thread.messages.at(-1).id);return send(res,201,thread);
       }
       const messageStatus=url.pathname.match(/^\/api\/threads\/([^/]+)\/messages\/([^/]+)\/agent-status$/);
-      if(req.method==="POST"&&messageStatus){const data=await body(req);if(!["received","processing","completed","error"].includes(data.status))return send(res,400,{error:"エージェント状態が不正です"});const message=store.setAgentStatus(opened.document.id,messageStatus[1],messageStatus[2],data.status);if(!message)return send(res,404,{error:"人間のメッセージが見つかりません"});broadcast("message",{threadId:message.threadId,message});return send(res,200,message);}
+      if(req.method==="POST"&&messageStatus){const data=await body(req);if(!["received","processing","completed","error"].includes(data.status))return send(res,400,{error:"Invalid agent status"});const message=store.setAgentStatus(opened.document.id,messageStatus[1],messageStatus[2],data.status);if(!message)return send(res,404,{error:"Human message not found"});broadcast("message",{threadId:message.threadId,message});return send(res,200,message);}
       const message=url.pathname.match(/^\/api\/threads\/([^/]+)\/messages$/);
-      if(req.method==="POST"&&message){const data=await body(req);if(!["human","agent","system"].includes(data.author)||!data.content?.trim())return send(res,400,{error:"author と content は必須です"});if(!store.threadBelongsToDocument(opened.document.id,message[1]))return send(res,404,{error:"スレッドが見つかりません"});const msg=store.addMessage(message[1],data.author,data.content);broadcast("message",{threadId:message[1],message:msg});if(data.author==="human")queueFeedback(msg.id);return send(res,201,msg);}
+      if(req.method==="POST"&&message){const data=await body(req);if(!["human","agent","system"].includes(data.author)||!data.content?.trim())return send(res,400,{error:"author and content are required"});if(!store.threadBelongsToDocument(opened.document.id,message[1]))return send(res,404,{error:"Thread not found"});const msg=store.addMessage(message[1],data.author,data.content);broadcast("message",{threadId:message[1],message:msg});if(data.author==="human")queueFeedback(msg.id);return send(res,201,msg);}
       const status=url.pathname.match(/^\/api\/threads\/([^/]+)\/status$/);
-      if(req.method==="POST"&&status){const data=await body(req);if(!["open","resolved"].includes(data.status))return send(res,400,{error:"状態が不正です"});const thread=store.setThreadStatus(status[1],data.status);broadcast("thread",{thread});return send(res,200,thread);}
+      if(req.method==="POST"&&status){const data=await body(req);if(!["open","resolved"].includes(data.status))return send(res,400,{error:"Invalid status"});const thread=store.setThreadStatus(status[1],data.status);broadcast("thread",{thread});return send(res,200,thread);}
       if(req.method==="GET"&&url.pathname==="/api/feedback")return send(res,200,feedback(state()));
       if(req.method==="GET"&&url.pathname==="/api/revisions")return send(res,200,store.revisions(opened.document.id).map(({content,...r})=>r));
       const diff=url.pathname.match(/^\/api\/revisions\/([^/]+)\/diff$/);
-      if(req.method==="GET"&&diff){const rev=store.revisionById(diff[1]);if(!rev)return send(res,404,{error:"リビジョンが見つかりません"});const all=store.revisions(opened.document.id),idx=all.findIndex(r=>r.id===rev.id),prev=all[Math.max(0,idx-1)];return send(res,200,{diff:idx===0?"前のリビジョンはありません":unifiedDiff(prev.content,rev.content,`リビジョン ${prev.number}`,`リビジョン ${rev.number}`)});}
+      if(req.method==="GET"&&diff){const rev=store.revisionById(diff[1]);if(!rev)return send(res,404,{error:"Revision not found"});const all=store.revisions(opened.document.id),idx=all.findIndex(r=>r.id===rev.id),prev=all[Math.max(0,idx-1)];return send(res,200,{diff:idx===0?"No previous revision":unifiedDiff(prev.content,rev.content,`Revision ${prev.number}`,`Revision ${rev.number}`)});}
       const restore=url.pathname.match(/^\/api\/revisions\/([^/]+)\/restore$/);
-      if(req.method==="POST"&&restore){const rev=store.revisionById(restore[1]);if(!rev)return send(res,404,{error:"リビジョンが見つかりません"});writing=true;await writeFile(options.documentPath,rev.content,"utf8");latestContent=rev.content;const created=store.addRevision(opened.document.id,rev.content,`リビジョン ${rev.number} から復元`,[]);for(const thread of store.threads(opened.document.id)){const anchor=reanchor(thread.anchor,rev.content);store.updateAnchor(thread.id,anchor??thread.anchor,!anchor);}setTimeout(()=>writing=false,300);broadcast("revision",{revision:created});return send(res,201,created);}
+      if(req.method==="POST"&&restore){const rev=store.revisionById(restore[1]);if(!rev)return send(res,404,{error:"Revision not found"});writing=true;await writeFile(options.documentPath,rev.content,"utf8");latestContent=rev.content;const created=store.addRevision(opened.document.id,rev.content,`Restored from revision ${rev.number}`,[]);for(const thread of store.threads(opened.document.id)){const anchor=reanchor(thread.anchor,rev.content);store.updateAnchor(thread.id,anchor??thread.anchor,!anchor);}setTimeout(()=>writing=false,300);broadcast("revision",{revision:created});return send(res,201,created);}
       if(req.method==="POST"&&url.pathname==="/api/finish"){
         await body(req); const result="finished",completedAt=store.finish(opened.session.id);const output={...feedback(state()),result,completedAt};send(res,200,output);broadcast("finished",output);notifyAgents(agentClients,"finished",output);setTimeout(()=>complete(output),50);return;
       }
-      return send(res,404,{error:"見つかりません"});
+      return send(res,404,{error:"Not found"});
     } catch(error){console.error(error);send(res,500,{error:error.message});}
   });
   try {

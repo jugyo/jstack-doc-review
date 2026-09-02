@@ -38,7 +38,7 @@ export class Store {
     return { document: { id: doc.id, path }, session, revision };
   }
 
-  addRevision(documentId, content, reason = "文書が変更されました", sourceThreadIds = []) {
+  addRevision(documentId, content, reason = "Document changed", sourceThreadIds = []) {
     const hash = createHash("sha256").update(content).digest("hex");
     const existing = this.db.prepare("SELECT * FROM revisions WHERE document_id=? AND content_hash=? ORDER BY number DESC LIMIT 1").get(documentId, hash);
     const current = this.currentRevision(documentId);

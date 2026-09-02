@@ -1,27 +1,27 @@
 # jstack-md
 
-`jstack-md` は、AI が作成した Markdown をローカルのブラウザで開き、エージェントとの質問・回答・編集の対話を行うツールです。文章の一部へのコメント、エージェントの返信、文書の編集、リビジョン確認を、Git やプロジェクト内のメタデータなしで扱えます。
+`jstack-md` opens AI-authored Markdown in a local browser and provides an interactive workflow for questions, answers, and edits with an agent. It supports comments on selected text, agent replies, document editing, and revision review without Git or project metadata.
 
-## 要件
+## Requirements
 
-- Node.js 22.5 以降（組み込み SQLite を使用）
+- Node.js 22.5 or later (uses the built-in SQLite module)
 
-## インストール
+## Installation
 
 ```bash
 npx skills add jugyo/jstack-md --skill jstack-md --global --yes
 ```
 
-[`skills`](https://skills.sh/) CLI が対応するエージェントへ連携をインストールします。skill は `npx` 経由で `jstack-md` CLI を実行するため、npm パッケージを別途グローバルインストールする必要はありません。skill がすぐに認識されない場合はエージェントを再起動してください。
+This installs the integration for agents supported by the [`skills`](https://skills.sh/) CLI. The skill runs the `jstack-md` CLI through `npx`, so no separate global npm installation is required. Restart the agent if the skill is not recognized immediately.
 
-このリポジトリをローカルで開発するときは、`npm link` で公開パッケージの代わりに作業コピーを使えます。
+When developing this repository locally, use `npm link` to use the working copy instead of the published package.
 
-## 文書を開く
+## Open a document
 
-文書を作成したエージェントに、次のように依頼します。
+Ask the authoring agent to open a document:
 
 ```text
-README.md を jstack-md で開いてください。
+Open README.md with jstack-md.
 ```
 
 When no path is provided, jstack-md searches the current working directory (or the directory passed with `--cwd`) and selects the most recently created readable and writable Markdown file. The selected path is printed in the startup log. If no Markdown file is available, the skill saves the latest substantial user-facing text to a temporary text file and passes it with `--text-file`. jstack-md preserves that content in a temporary Markdown file before starting the review and prints the saved path in the log.
@@ -35,9 +35,8 @@ The automatic target selection order is:
 If neither source is available, jstack-md does not start and reports that a Markdown path or long text is required.
 
 The skill launches the local browser UI and keeps the current authoring-agent session connected. Each browser comment immediately notifies that agent, which can reply in the inline thread or edit the Markdown without requiring copy and paste.
-skill はローカルのブラウザ画面を起動し、現在のエージェントセッションとの接続を保ちます。選択範囲へのコメントを送ると、エージェントへ即座に通知されます。エージェントは会話へ返信したり、Markdown を編集したりできます。
 
-CLI を直接使うこともできます。
+You can also use the CLI directly.
 
 ```bash
 jstack-md ./design.md
@@ -50,13 +49,12 @@ jstack-md --text-file ./context.txt
 ```
 
 The CLI binds only to `127.0.0.1`, opens the browser, and waits. On finish it writes the structured review result to stdout and exits. Review data lives in `~/.jstack-md/review.db`, never beside the document.
-CLI は `127.0.0.1` のみにバインドしてブラウザを開き、終了操作まで待機します。終了時には構造化された対話結果を標準出力へ書き込みます。対話データは `~/.jstack-md/review.db` に保存され、文書の隣には作成されません。
 
-ヘッドレス環境では `--no-open` を使い、情報 URL を非表示にする場合は `--json` を使います。テストでは `--data-dir` で保存先を変更できます。
+Use `--no-open` in headless environments and `--json` to suppress the informational URL. Tests can use `--data-dir` to change the storage location.
 
-## エージェントとの対話
+## Interact with the agent
 
-同じエージェントセッションからプロセスを起動し、表示されたローカル URL を通じてブラウザと接続します。
+Start the process from the same agent session and connect to the browser through the displayed local URL.
 
 ```text
 GET  /api/feedback
@@ -65,19 +63,19 @@ POST /api/threads/:threadId/messages
 GET  /api/state
 ```
 
-返信の例:
+Example reply:
 
 ```bash
 curl -X POST "$DOCUMENT_URL/api/threads/$THREAD_ID/messages" \
   -H 'content-type: application/json' \
-  -d '{"author":"agent","content":"この要求はノンブロッキングのままにする必要があります。"}'
+  -d '{"author":"agent","content":"This request must remain non-blocking."}'
 ```
 
-`/api/agent-events` は、ユーザーが箇所付きコメントまたはフォローアップを送った直後に、完全な `document_feedback` イベントを送る SSE ストリームです。各イベントには `eventId`、`threadId`、`messageId` が含まれます。未完了イベントは永続キューに保持され、再接続後に再送されます。エージェントは定期的なポーリングではなくこのストリームを開いたままにし、処理中の各人間メッセージを agent-status エンドポイントで `processing`、`completed`、または `error` に更新してください。
+`/api/agent-events` is an SSE stream that sends a complete `document_feedback` event immediately after a user submits an anchored comment or follow-up. Each event includes `eventId`, `threadId`, and `messageId`. Unfinished events remain in a durable queue and are resent after reconnecting. Agents should keep this stream open instead of relying on periodic polling, and update each human message through the agent-status endpoint to `processing`, `completed`, or `error` while handling it.
 
-エージェントが Markdown を編集すると、`jstack-md` が変更を検知してリビジョンを保存し、コメントの位置を再配置してブラウザへ通知します。終了操作は確認や承認を判定せず、セッションを中立的に終了します。終了結果は常に `finished` です。
+When the agent edits Markdown, `jstack-md` detects the change, saves a revision, reanchors comments, and notifies the browser. The finish action does not judge confirmation or approval; it ends the session neutrally. The result is always `finished`.
 
-エージェントの実行コンテキストを付加することもできます。
+You can also attach the agent's execution context.
 
 ```bash
 jstack-md design.md --provider claude-code --session-id "$SESSION_ID" --cwd "$PWD"
@@ -85,17 +83,17 @@ jstack-md design.md --provider claude-code --session-id "$SESSION_ID" --cwd "$PW
 
 ## API
 
-- `POST /api/threads` — `{ anchor, comment }`（箇所付きコメント）
+- `POST /api/threads` — `{ anchor, comment }` (anchored comment)
 - `POST /api/threads/:id/messages` — `{ author: "human" | "agent" | "system", content }`
 - `POST /api/threads/:threadId/messages/:messageId/agent-status` — `{ status: "received" | "processing" | "completed" | "error" }`
 - `POST /api/threads/:id/status` — `{ status: "open" | "resolved" }`
 - `GET /api/revisions/:id/diff`
 - `POST /api/revisions/:id/restore`
-- `POST /api/finish` — セッションを終了し、`result: "finished"` を返す
-- `GET /events` — SSE ストリーム
-- `GET /api/agent-events` — エージェント向け質問・コメント SSE ストリーム
+- `POST /api/finish` — Ends the session and returns `result: "finished"`
+- `GET /events` — SSE stream
+- `GET /api/agent-events` — SSE stream for agent-directed questions and comments
 
-チェックの実行:
+Run the checks:
 
 ```bash
 npm test
