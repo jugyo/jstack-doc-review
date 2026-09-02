@@ -24,6 +24,17 @@ npx skills add jugyo/jstack-md --skill jstack-md --global --yes
 README.md を jstack-md で開いてください。
 ```
 
+When no path is provided, jstack-md searches the current working directory (or the directory passed with `--cwd`) and selects the most recently created readable and writable Markdown file. The selected path is printed in the startup log. If no Markdown file is available, the skill saves the latest substantial user-facing text to a temporary text file and passes it with `--text-file`. jstack-md preserves that content in a temporary Markdown file before starting the review and prints the saved path in the log.
+
+The automatic target selection order is:
+
+1. An explicitly provided Markdown path
+2. The most recently created Markdown file
+3. A temporary Markdown file created from the latest substantial user-facing text
+
+If neither source is available, jstack-md does not start and reports that a Markdown path or long text is required.
+
+The skill launches the local browser UI and keeps the current authoring-agent session connected. Each browser comment immediately notifies that agent, which can reply in the inline thread or edit the Markdown without requiring copy and paste.
 skill はローカルのブラウザ画面を起動し、現在のエージェントセッションとの接続を保ちます。選択範囲へのコメントを送ると、エージェントへ即座に通知されます。エージェントは会話へ返信したり、Markdown を編集したりできます。
 
 CLI を直接使うこともできます。
@@ -32,6 +43,13 @@ CLI を直接使うこともできます。
 jstack-md ./design.md
 ```
 
+The same automatic selection is used when the CLI is started without a path. If no Markdown file exists and the long text to review has been saved to `context.txt`, start it as follows:
+
+```bash
+jstack-md --text-file ./context.txt
+```
+
+The CLI binds only to `127.0.0.1`, opens the browser, and waits. On finish it writes the structured review result to stdout and exits. Review data lives in `~/.jstack-md/review.db`, never beside the document.
 CLI は `127.0.0.1` のみにバインドしてブラウザを開き、終了操作まで待機します。終了時には構造化された対話結果を標準出力へ書き込みます。対話データは `~/.jstack-md/review.db` に保存され、文書の隣には作成されません。
 
 ヘッドレス環境では `--no-open` を使い、情報 URL を非表示にする場合は `--json` を使います。テストでは `--data-dir` で保存先を変更できます。

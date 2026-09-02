@@ -8,6 +8,38 @@ import { reanchor } from "../src/anchors.js";
 import { unifiedDiff } from "../src/diff.js";
 import { startServer } from "../src/server.js";
 import { sourceOffsetForMappedText, sourceTextForRange } from "../web/selection.js";
+import { findLatestMarkdown, resolveDocument } from "../src/document.js";
+
+test("selects the most recently created Markdown when the path is omitted", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "jstack-md-document-test-"));
+  await mkdir(join(dir, "nested"));
+  await writeFile(join(dir, "older.md"), "# Older\n");
+  await new Promise(resolve => setTimeout(resolve, 10));
+  await writeFile(join(dir, "nested", "newer.md"), "# Newer\n");
+  assert.equal(await findLatestMarkdown(dir), join(dir, "nested", "newer.md"));
+  assert.deepEqual(await resolveDocument({ cwd: dir }), { path: join(dir, "nested", "newer.md"), source: "latest-markdown" });
+});
+
+test("saves long text as a temporary Markdown when no Markdown exists", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "jstack-md-text-test-")), textFile = join(dir, "context.txt");
+  const content = "# Latest explanation\n\nThis content is preserved as written.\n";
+  await writeFile(textFile, content);
+  const document = await resolveDocument({ cwd: dir, textFile });
+  assert.equal(document.source, "long-text");
+  assert.equal(await readFile(document.path, "utf8"), content);
+  assert.match(document.path, /jstack-md-context-[^/]+\/context\.md$/);
+});
+
+test("requests input when no candidate or long text is available", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "jstack-md-empty-test-"));
+  await assert.rejects(() => resolveDocument({ cwd: dir }), /No Markdown review target found/);
+});
+
+test("prefers an explicit path over automatic selection", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "jstack-md-explicit-test-")), file = join(dir, "chosen.md");
+  await writeFile(file, "# Chosen\n");
+  assert.deepEqual(await resolveDocument({ explicitPath: file, cwd: dir }), { path: file, source: "explicit" });
+});
 
 test("reanchors exact text after lines move",()=>{
   const anchor={startLine:2,endLine:2,selectedText:"important sentence",prefix:"title",suffix:"tail"};

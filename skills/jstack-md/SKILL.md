@@ -7,7 +7,11 @@ description: jstack-md のブラウザ画面でローカルの AI 作成 Markdow
 
 現在のエージェントセッションを文書の作成エージェントとして使います。質問やコメントを別の LLM セッションへ渡してはいけません。
 
-1. Ensure the target Markdown exists, then start `npx --yes jstack-md <path> --provider <agent-name> --cwd <project-cwd>` as a long-running background process. Capture the local URL printed on stderr and keep the process handle. A locally linked `jstack-md` package may be used during development.
+When a target path is provided, use that Markdown file. When no path is provided, jstack-md searches the current working directory (or the directory passed with `--cwd`) and selects the most recently created readable and writable Markdown file. The selected path is printed to stderr at startup; tell the user which path was selected.
+
+If no Markdown candidate exists and the current context contains reviewable substantial text, such as the latest user-facing explanation, save it unchanged to a temporary text file and start jstack-md with `--text-file <path>`. jstack-md creates a temporary Markdown file and prints its path to stderr. If neither a candidate nor long text is available, do not start jstack-md; return the error asking the user for a Markdown path or long text.
+
+1. Resolve the target using the order above, then start `npx --yes jstack-md [<path>] --provider <agent-name> --cwd <project-cwd>` as a long-running background process. When long text was saved, omit `[<path>]` and add `--text-file <path>`. Capture the selected path, saved path, and local URL printed to stderr, and keep the process handle. A locally linked `jstack-md` package may be used during development.
 2. ブラウザ画面の準備ができたことをユーザーへ伝えます。直ちに `GET <url>/api/agent-events` を第二の長時間実行プロセス（例: `curl -N`）として開き、そのプロセスを待ちながらエージェントのターンを維持します。画面を開いただけでターンを終了してはいけません。定期ポーリングを主な通知手段にしないでください。
 3. `feedback` SSE イベントは、ユーザーが箇所付きコメントまたはフォローアップを送ったことを示します。イベントの選択テキスト、前後の文脈、文書、既存のスレッドメッセージを使って、返信、Markdown の編集、またはその両方を判断します。ユーザーにコメントのコピーを依頼してはいけません。
 4. `feedback` イベントには `eventId`、`threadId`、`messageId` が含まれます。連続して届いた複数のイベントも含め、各人間メッセージ ID を独立して処理してください。先のイベントを処理中だからといって、後続イベントを破棄してはいけません。
