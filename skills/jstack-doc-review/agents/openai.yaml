@@ -1,0 +1,4 @@
+interface:
+  display_name: "jstack-doc-review"
+  short_description: "Review documents interactively with the authoring agent"
+  default_prompt: "Open this document with jstack-doc-review and respond to questions or comments received in the browser."

@@ -9,9 +9,10 @@ import { unifiedDiff } from "../src/diff.js";
 import { startServer } from "../src/server.js";
 import { sourceOffsetForMappedText, sourceTextForRange } from "../web/selection.js";
 import { findLatestMarkdown, resolveDocument } from "../src/document.js";
+import { resolveDataDir } from "../src/storage.js";
 
 test("selects the most recently created Markdown when the path is omitted", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "jstack-md-document-test-"));
+  const dir = await mkdtemp(join(tmpdir(), "jstack-doc-review-document-test-"));
   await mkdir(join(dir, "nested"));
   await writeFile(join(dir, "older.md"), "# Older\n");
   await new Promise(resolve => setTimeout(resolve, 10));
@@ -21,24 +22,41 @@ test("selects the most recently created Markdown when the path is omitted", asyn
 });
 
 test("saves long text as a temporary Markdown when no Markdown exists", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "jstack-md-text-test-")), textFile = join(dir, "context.txt");
+  const dir = await mkdtemp(join(tmpdir(), "jstack-doc-review-text-test-")), textFile = join(dir, "context.txt");
   const content = "# Latest explanation\n\nThis content is preserved as written.\n";
   await writeFile(textFile, content);
   const document = await resolveDocument({ cwd: dir, textFile });
   assert.equal(document.source, "long-text");
   assert.equal(await readFile(document.path, "utf8"), content);
-  assert.match(document.path, /jstack-md-context-[^/]+\/context\.md$/);
+  assert.match(document.path, /jstack-doc-review-context-[^/]+\/context\.md$/);
 });
 
 test("requests input when no candidate or long text is available", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "jstack-md-empty-test-"));
+  const dir = await mkdtemp(join(tmpdir(), "jstack-doc-review-empty-test-"));
   await assert.rejects(() => resolveDocument({ cwd: dir }), /No Markdown review target found/);
 });
 
 test("prefers an explicit path over automatic selection", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "jstack-md-explicit-test-")), file = join(dir, "chosen.md");
+  const dir = await mkdtemp(join(tmpdir(), "jstack-doc-review-explicit-test-")), file = join(dir, "chosen.md");
   await writeFile(file, "# Chosen\n");
   assert.deepEqual(await resolveDocument({ explicitPath: file, cwd: dir }), { path: file, source: "explicit" });
+});
+
+test("copies legacy review data to the new default directory without removing it", async t => {
+  const home = await mkdtemp(join(tmpdir(), "jstack-doc-review-home-test-"));
+  const legacyDir = join(home, ".jstack-md");
+  const file = join(home, "legacy.md");
+  await writeFile(file, "# Legacy\n");
+  const legacyApp = await startServer({ documentPath: file, port: 0, openBrowser: false, dataDir: legacyDir });
+  await legacyApp.close();
+  const dataDir = await resolveDataDir({ home });
+  assert.equal(dataDir, join(home, ".jstack-doc-review"));
+  const app = await startServer({ documentPath: file, port: 0, openBrowser: false, homeDir: home });
+  t.after(() => app.close().catch(() => {}));
+  const state = await fetch(app.url + "/api/state").then(response => response.json());
+  assert.equal(state.document.path, file);
+  assert.equal(state.revision.number, 1);
+  assert.equal(await readFile(join(legacyDir, "review.db"), "utf8"), await readFile(join(dataDir, "review.db"), "utf8"));
 });
 
 test("reanchors exact text after lines move",()=>{
@@ -103,7 +121,7 @@ async function readSseEvents(reader, count) {
 }
 
 test("persists consecutive comments in the durable queue and delivers each once after reconnecting", async t => {
-  const dir = await mkdtemp(join(tmpdir(), "jstack-md-queue-test-")), file = join(dir, "design.md");
+  const dir = await mkdtemp(join(tmpdir(), "jstack-doc-review-queue-test-")), file = join(dir, "design.md");
   await writeFile(file, "# Design\n");
   const app = await startServer({ documentPath: file, port: 0, openBrowser: false, dataDir: join(dir, "data") });
   t.after(() => app.close().catch(() => {}));
@@ -122,7 +140,7 @@ test("persists consecutive comments in the durable queue and delivers each once 
 });
 
 test("does not deliver events for another document in a shared data directory", async t => {
-  const dir = await mkdtemp(join(tmpdir(), "jstack-md-isolation-test-")), dataDir = join(dir, "data");
+  const dir = await mkdtemp(join(tmpdir(), "jstack-doc-review-isolation-test-")), dataDir = join(dir, "data");
   const fileA = join(dir, "a.md"), fileB = join(dir, "b.md");
   await writeFile(fileA, "# A\n");
   await writeFile(fileB, "# B\n");
@@ -143,7 +161,7 @@ test("does not deliver events for another document in a shared data directory", 
 });
 
 test("migrates existing human messages into the received queue", async t => {
-  const dir = await mkdtemp(join(tmpdir(), "jstack-md-migration-test-")), file = join(dir, "legacy.md"), dataDir = join(dir, "data");
+  const dir = await mkdtemp(join(tmpdir(), "jstack-doc-review-message-migration-test-")), file = join(dir, "legacy.md"), dataDir = join(dir, "data");
   await writeFile(file, "# Legacy\n");
   await mkdir(dataDir);
   const legacy = new DatabaseSync(join(dataDir, "review.db"));
@@ -169,7 +187,7 @@ test("migrates existing human messages into the received queue", async t => {
 });
 
 test("document conversation API persists, restores, and finishes",async t=>{
-  const dir=await mkdtemp(join(tmpdir(),"jstack-md-test-")),file=join(dir,"design.md");await writeFile(file,"# Design\n\nImportant choice.\nA second line.\n");
+  const dir=await mkdtemp(join(tmpdir(),"jstack-doc-review-test-")),file=join(dir,"design.md");await writeFile(file,"# Design\n\nImportant choice.\nA second line.\n");
   const app=await startServer({documentPath:file,port:0,openBrowser:false,dataDir:join(dir,"data")});t.after(()=>app.close().catch(()=>{}));
   let state=await fetch(app.url+"/api/state").then(r=>r.json());assert.equal(state.revision.number,1);
   const eventResponse=await fetch(app.url+"/api/agent-events"),eventReader=eventResponse.body.getReader();await eventReader.read();

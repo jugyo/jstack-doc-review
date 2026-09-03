@@ -1,4 +1,0 @@
-interface:
-  display_name: "jstack-md"
-  short_description: "Interact with Markdown alongside the authoring agent"
-  default_prompt: "Open this Markdown file with jstack-md and respond to questions or comments received in the browser."

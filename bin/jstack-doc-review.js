@@ -6,17 +6,17 @@ import { constants } from "node:fs";
 import { startServer } from "../src/server.js";
 import { resolveDocument } from "../src/document.js";
 
-const usage = `jstack-md <document.md> [options]
+const usage = `jstack-doc-review <document.md> [options]
 
 Options:
   --port <number>       Port (default: an available port)
   --no-open             Do not open the browser
-  --data-dir <path>     Data directory (default: ~/.jstack-md)
+  --data-dir <path>     Data directory (default: ~/.jstack-doc-review)
   --text-file <path>    Long text to save as Markdown when no Markdown is found
   --provider <name>     Agent provider name
   --session-id <id>     Authoring agent session ID
-  --cwd <path>          Agent working directory
-  --json                Output only the final conversation result as JSON
+  --cwd <path>          Authoring agent working directory
+  --json                Output only the final document conversation result as JSON
   -h, --help            Show this help`;
 
 let parsed;
@@ -57,7 +57,7 @@ try {
 }
 catch { console.error(`Unable to read or write Markdown file: ${documentPath}`); process.exit(1); }
 if (!documentPath.toLowerCase().endsWith(".md")) {
-  console.error("jstack-md only supports .md files"); process.exit(2);
+  console.error("jstack-doc-review only supports .md files"); process.exit(2);
 }
 
 const app = await startServer({

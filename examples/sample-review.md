@@ -1,6 +1,6 @@
 # Event delivery design
 
-This sample document exercises the main **jstack-md** document conversation.
+This sample document exercises the main **jstack-doc-review** document conversation.
 
 ## Background
 

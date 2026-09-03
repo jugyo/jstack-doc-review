@@ -1,13 +1,13 @@
 {
-  "name": "jstack-md",
+  "name": "jstack-doc-review",
   "version": "0.1.0",
-  "description": "Browser-first document conversation for AI-authored Markdown",
+  "description": "Browser-first workflow for reviewing, discussing, editing, and inspecting revisions of AI-authored documents",
   "type": "module",
   "bin": {
-    "jstack-md": "./bin/jstack-md.js"
+    "jstack-doc-review": "./bin/jstack-doc-review.js"
   },
   "scripts": {
-    "start": "node bin/jstack-md.js",
+    "start": "node bin/jstack-doc-review.js",
     "test": "node --test"
   },
   "engines": {

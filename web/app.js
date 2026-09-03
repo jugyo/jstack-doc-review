@@ -54,7 +54,7 @@ function markdownLine(line, inCode) {
 }
 
 function render() {
-  document.title = `${state.document.name} — jstack-md`;
+  document.title = `${state.document.name} — jstack-doc-review`;
   $("#filename").textContent = state.document.name;
   let code = false;
   let documentHtml = "";

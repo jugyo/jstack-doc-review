@@ -3,7 +3,7 @@ import { constants } from "node:fs";
 import { extname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 
-const ignoredDirectories = new Set([".git", "node_modules", ".jstack-md"]);
+const ignoredDirectories = new Set([".git", "node_modules", ".jstack-doc-review", ".jstack-md"]);
 
 export async function findLatestMarkdown(root) {
   const candidates = [];
@@ -27,7 +27,7 @@ export async function resolveDocument({ explicitPath, cwd = process.cwd(), textF
       throw new Error(`Unable to read long text: ${sourcePath}`);
     }
     if (content.trim()) {
-      const directory = await mkdtemp(join(tmpdir(), "jstack-md-context-"));
+      const directory = await mkdtemp(join(tmpdir(), "jstack-doc-review-context-"));
       const path = join(directory, "context.md");
       await writeFile(path, content, { encoding: "utf8", mode: 0o600 });
       return { path, source: "long-text", sourcePath };

@@ -7,6 +7,7 @@ import { execFile } from "node:child_process";
 import { Store } from "./store.js";
 import { contextFor, reanchor } from "./anchors.js";
 import { unifiedDiff } from "./diff.js";
+import { resolveDataDir } from "./storage.js";
 
 const mime={".js":"text/javascript; charset=utf-8",".css":"text/css; charset=utf-8",".html":"text/html; charset=utf-8"};
 const send=(res,status,data,type="application/json; charset=utf-8")=>{res.writeHead(status,{"content-type":type,"cache-control":"no-store","x-content-type-options":"nosniff"});res.end(type.startsWith("application/json")?JSON.stringify(data):data);};
@@ -14,14 +15,14 @@ const body=async req=>{const chunks=[];for await(const c of req)chunks.push(c);i
 
 export async function startServer(options) {
   const content=await readFile(options.documentPath,"utf8");
-  const dataDir=options.dataDir ?? join(homedir(),".jstack-md"); await mkdir(dataDir,{recursive:true,mode:0o700});
+  const dataDir=await resolveDataDir({dataDir:options.dataDir,home:options.homeDir ?? homedir()}); await mkdir(dataDir,{recursive:true,mode:0o700});
   const store=new Store(join(dataDir,"review.db"));
   const opened=store.open(options.documentPath,content,options.agentBinding); const clients=new Set(),agentClients=new Set(),agentDelivery=new Map();
   let latestContent=content, writing=false, debounce;
   let complete; const completion=new Promise(r=>complete=r);
   const broadcast=(event,payload={})=>{const msg=`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;for(const res of clients)res.write(msg);};
   const state=()=>({
-    product:"jstack-md",document:{...opened.document,name:basename(options.documentPath),content:latestContent},session:store.session(opened.session.id),
+    product:"jstack-doc-review",document:{...opened.document,name:basename(options.documentPath),content:latestContent},session:store.session(opened.session.id),
     revision:store.revision(store.currentRevision(opened.document.id)),revisions:store.revisions(opened.document.id).map(({content,...r})=>r),threads:store.threads(opened.document.id),agentBinding:options.agentBinding
   });
   const capture=async(reason="Document changed",sourceThreadIds=[])=>{
