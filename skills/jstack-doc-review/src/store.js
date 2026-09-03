@@ -18,9 +18,6 @@ export class Store {
       CREATE TABLE IF NOT EXISTS messages(id TEXT PRIMARY KEY,thread_id TEXT NOT NULL,author TEXT NOT NULL,content TEXT NOT NULL,created_at TEXT NOT NULL,agent_status TEXT,FOREIGN KEY(thread_id) REFERENCES threads(id));
       CREATE TABLE IF NOT EXISTS agent_events(id TEXT PRIMARY KEY,message_id TEXT UNIQUE NOT NULL,status TEXT NOT NULL,created_at TEXT NOT NULL,FOREIGN KEY(message_id) REFERENCES messages(id));
       CREATE TABLE IF NOT EXISTS review_rounds(id TEXT PRIMARY KEY,document_id TEXT NOT NULL,base_revision_id TEXT NOT NULL,result_revision_id TEXT,started_at TEXT NOT NULL,completed_at TEXT,FOREIGN KEY(document_id) REFERENCES documents(id));`);
-    this.ensureColumn("messages", "agent_status", "TEXT");
-    this.migrateSessionResults();
-    this.migrateAgentMessages();
   }
 
   open(path, content, binding = null) {
@@ -92,17 +89,4 @@ export class Store {
   }
   finish(sessionId) { const at=now(); this.db.prepare("UPDATE sessions SET status='finished',completed_at=?,result='finished' WHERE id=?").run(at,sessionId); return at; }
   close() { this.db.close(); }
-  ensureColumn(table, column, definition) {
-    const columns = this.db.prepare(`PRAGMA table_info(${table})`).all();
-    if (!columns.some(item => item.name === column)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
-  }
-  migrateAgentMessages() {
-    this.db.prepare("UPDATE messages SET agent_status='received' WHERE author='human' AND agent_status IS NULL").run();
-    const messages = this.db.prepare("SELECT m.id,m.created_at createdAt FROM messages m LEFT JOIN agent_events e ON e.message_id=m.id WHERE m.author='human' AND e.id IS NULL").all();
-    const insert = this.db.prepare("INSERT OR IGNORE INTO agent_events VALUES(?,?,?,?)");
-    for (const message of messages) insert.run(randomUUID(),message.id,"pending",message.createdAt);
-  }
-  migrateSessionResults() {
-    this.db.prepare("UPDATE sessions SET result='finished' WHERE result IS NOT NULL").run();
-  }
 }

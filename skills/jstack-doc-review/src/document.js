@@ -3,7 +3,7 @@ import { constants } from "node:fs";
 import { extname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 
-const ignoredDirectories = new Set([".git", "node_modules", ".jstack-doc-review", ".jstack-md"]);
+const ignoredDirectories = new Set([".git", "node_modules", ".jstack-doc-review"]);
 
 export async function findLatestMarkdown(root) {
   const candidates = [];

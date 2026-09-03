@@ -41,13 +41,6 @@ notifies that agent, which can reply in the inline thread or edit the Markdown
 without requiring copy and paste. The runtime binds only to `127.0.0.1`, and
 review data lives in `~/.jstack-doc-review/review.db`, never beside the document.
 
-## Migration from jstack-md
-
-`jstack-doc-review` is the skill name. The former `jstack-md` integration is not
-supported; use `jstack-doc-review` for new and existing installations.
-
-When the default data directory is used and `~/.jstack-doc-review/review.db` does not exist, an existing `~/.jstack-md/review.db` (including SQLite sidecar files) is copied to the new directory on first launch. The legacy directory is kept unchanged, so existing review data remains recoverable. An explicitly supplied `--data-dir` is used as-is and is not migrated automatically.
-
 ## Interact with the agent
 
 Start the process from the same agent session and connect to the browser through the displayed local URL.

@@ -1,6 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { DatabaseSync } from "node:sqlite";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -9,7 +8,6 @@ import { unifiedDiff } from "../skills/jstack-doc-review/src/diff.js";
 import { startServer } from "../skills/jstack-doc-review/src/server.js";
 import { sourceOffsetForMappedText, sourceTextForRange } from "../skills/jstack-doc-review/web/selection.js";
 import { findLatestMarkdown, resolveDocument } from "../skills/jstack-doc-review/src/document.js";
-import { resolveDataDir } from "../skills/jstack-doc-review/src/storage.js";
 
 test("selects the most recently created Markdown when the path is omitted", async () => {
   const dir = await mkdtemp(join(tmpdir(), "jstack-doc-review-document-test-"));
@@ -40,23 +38,6 @@ test("prefers an explicit path over automatic selection", async () => {
   const dir = await mkdtemp(join(tmpdir(), "jstack-doc-review-explicit-test-")), file = join(dir, "chosen.md");
   await writeFile(file, "# Chosen\n");
   assert.deepEqual(await resolveDocument({ explicitPath: file, cwd: dir }), { path: file, source: "explicit" });
-});
-
-test("copies legacy review data to the new default directory without removing it", async t => {
-  const home = await mkdtemp(join(tmpdir(), "jstack-doc-review-home-test-"));
-  const legacyDir = join(home, ".jstack-md");
-  const file = join(home, "legacy.md");
-  await writeFile(file, "# Legacy\n");
-  const legacyApp = await startServer({ documentPath: file, port: 0, openBrowser: false, dataDir: legacyDir });
-  await legacyApp.close();
-  const dataDir = await resolveDataDir({ home });
-  assert.equal(dataDir, join(home, ".jstack-doc-review"));
-  const app = await startServer({ documentPath: file, port: 0, openBrowser: false, homeDir: home });
-  t.after(() => app.close().catch(() => {}));
-  const state = await fetch(app.url + "/api/state").then(response => response.json());
-  assert.equal(state.document.path, file);
-  assert.equal(state.revision.number, 1);
-  assert.equal(await readFile(join(legacyDir, "review.db"), "utf8"), await readFile(join(dataDir, "review.db"), "utf8"));
 });
 
 test("reanchors exact text after lines move",()=>{
@@ -157,32 +138,6 @@ test("does not deliver events for another document in a shared data directory", 
   assert.match(decoder.decode(first.value), /event: ready/);
   const next = await Promise.race([reader.read(), new Promise(resolve => setTimeout(() => resolve({ timedOut: true }), 100))]);
   assert.equal(next.timedOut, true);
-  await reader.cancel();
-});
-
-test("migrates existing human messages into the received queue", async t => {
-  const dir = await mkdtemp(join(tmpdir(), "jstack-doc-review-message-migration-test-")), file = join(dir, "legacy.md"), dataDir = join(dir, "data");
-  await writeFile(file, "# Legacy\n");
-  await mkdir(dataDir);
-  const legacy = new DatabaseSync(join(dataDir, "review.db"));
-  legacy.exec(`
-    CREATE TABLE documents(id TEXT PRIMARY KEY,path TEXT UNIQUE NOT NULL,current_revision_id TEXT);
-    CREATE TABLE sessions(id TEXT PRIMARY KEY,document_id TEXT NOT NULL,status TEXT NOT NULL,started_at TEXT NOT NULL,completed_at TEXT,result TEXT,agent_binding TEXT);
-    CREATE TABLE revisions(id TEXT PRIMARY KEY,document_id TEXT NOT NULL,number INTEGER NOT NULL,content TEXT NOT NULL,content_hash TEXT NOT NULL,created_at TEXT NOT NULL,reason TEXT,source_thread_ids TEXT NOT NULL DEFAULT '[]');
-    CREATE TABLE threads(id TEXT PRIMARY KEY,document_id TEXT NOT NULL,anchor TEXT NOT NULL,status TEXT NOT NULL,orphaned INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL);
-    CREATE TABLE messages(id TEXT PRIMARY KEY,thread_id TEXT NOT NULL,author TEXT NOT NULL,content TEXT NOT NULL,created_at TEXT NOT NULL);
-  `);
-  legacy.prepare("INSERT INTO documents VALUES(?,?,?)").run("legacy-doc",file,null);
-  legacy.prepare("INSERT INTO threads VALUES(?,?,?,?,?,?)").run("legacy-thread","legacy-doc",JSON.stringify({startLine:1,endLine:1,selectedText:"# Legacy",prefix:"",suffix:""}),"open",0,"2026-01-01T00:00:00.000Z");
-  legacy.prepare("INSERT INTO messages VALUES(?,?,?,?,?)").run("legacy-message","legacy-thread","human","Old comment","2026-01-01T00:00:01.000Z");
-  legacy.close();
-  const app = await startServer({ documentPath: file, port: 0, openBrowser: false, dataDir });
-  t.after(() => app.close().catch(() => {}));
-  const state = await fetch(app.url + "/api/state").then(response => response.json());
-  assert.equal(state.threads[0].messages[0].agentStatus, "received");
-  const response = await fetch(app.url + "/api/agent-events"), reader = response.body.getReader();
-  const events = await readSseEvents(reader, 2);
-  assert.equal(events[1].data.messageId, "legacy-message");
   await reader.cancel();
 });
 
