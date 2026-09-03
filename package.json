@@ -1,13 +1,11 @@
 {
   "name": "jstack-doc-review",
   "version": "0.1.0",
-  "description": "Browser-first workflow for reviewing, discussing, editing, and inspecting revisions of AI-authored documents",
+  "private": true,
+  "description": "Agent skill for reviewing, discussing, editing, and inspecting revisions of AI-authored documents",
   "type": "module",
-  "bin": {
-    "jstack-doc-review": "./bin/jstack-doc-review.js"
-  },
   "scripts": {
-    "start": "node bin/jstack-doc-review.js",
+    "start": "node skills/jstack-doc-review/scripts/start.js",
     "test": "node --test"
   },
   "engines": {

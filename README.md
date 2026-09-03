@@ -8,20 +8,14 @@
 
 ## Installation
 
-The `jstack-doc-review` npm package has not been published yet. Until it is
-available from npm, install the CLI and skill from a local clone for development:
-
 ```bash
-git clone https://github.com/jugyo/jstack-doc-review.git
-cd jstack-doc-review
-npm link
-npx skills add . --skill jstack-doc-review --global --yes
+npx skills add jugyo/jstack-doc-review --skill jstack-doc-review --global --yes
 ```
 
-`npm link` makes the local CLI available, and the [`skills`](https://skills.sh/)
-CLI installs the integration for supported agents. Restart the agent if the
-skill is not recognized immediately. A public installation command will be
-documented after the npm package is published.
+This installs the integration and its bundled runtime for agents supported by
+the [`skills`](https://skills.sh/) CLI. No npm package or separate CLI
+installation is required. Restart the agent if the skill is not recognized
+immediately.
 
 ## Open a document
 
@@ -41,29 +35,18 @@ The automatic target selection order is:
 
 If neither source is available, jstack-doc-review does not start and reports that a Markdown path or long text is required.
 
-The skill launches the local browser UI and keeps the current authoring-agent session connected. Each browser comment immediately notifies that agent, which can reply in the inline thread or edit the Markdown without requiring copy and paste.
-
-You can also use the CLI directly.
-
-```bash
-jstack-doc-review ./design.md
-```
-
-The same automatic selection is used when the CLI is started without a path. If no Markdown file exists and the long text to review has been saved to `context.txt`, start it as follows:
-
-```bash
-jstack-doc-review --text-file ./context.txt
-```
-
-The CLI binds only to `127.0.0.1`, opens the browser, and waits. On finish it writes the structured review result to stdout and exits. Review data lives in `~/.jstack-doc-review/review.db`, never beside the document.
+The skill launches its bundled runtime, opens the local browser UI, and keeps
+the current authoring-agent session connected. Each browser comment immediately
+notifies that agent, which can reply in the inline thread or edit the Markdown
+without requiring copy and paste. The runtime binds only to `127.0.0.1`, and
+review data lives in `~/.jstack-doc-review/review.db`, never beside the document.
 
 ## Migration from jstack-md
 
-`jstack-doc-review` is the package, CLI command, and skill name. The former `jstack-md` CLI is not supported; use `jstack-doc-review` for new and existing integrations.
+`jstack-doc-review` is the skill name. The former `jstack-md` integration is not
+supported; use `jstack-doc-review` for new and existing installations.
 
 When the default data directory is used and `~/.jstack-doc-review/review.db` does not exist, an existing `~/.jstack-md/review.db` (including SQLite sidecar files) is copied to the new directory on first launch. The legacy directory is kept unchanged, so existing review data remains recoverable. An explicitly supplied `--data-dir` is used as-is and is not migrated automatically.
-
-Use `--no-open` in headless environments and `--json` to suppress the informational URL. Tests can use `--data-dir` to change the storage location.
 
 ## Interact with the agent
 
@@ -87,12 +70,6 @@ curl -X POST "$DOCUMENT_URL/api/threads/$THREAD_ID/messages" \
 `/api/agent-events` is an SSE stream that sends a complete `document_feedback` event immediately after a user submits an anchored comment or follow-up. Each event includes `eventId`, `threadId`, and `messageId`. Unfinished events remain in a durable queue and are resent after reconnecting. Agents should keep this stream open instead of relying on periodic polling, and update each human message through the agent-status endpoint to `processing`, `completed`, or `error` while handling it.
 
 When the agent edits Markdown, `jstack-doc-review` detects the change, saves a revision, reanchors comments, and notifies the browser. The finish action does not judge confirmation or approval; it ends the session neutrally. The result is always `finished`.
-
-You can also attach the agent's execution context.
-
-```bash
-jstack-doc-review design.md --provider claude-code --session-id "$SESSION_ID" --cwd "$PWD"
-```
 
 ## API
 

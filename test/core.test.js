@@ -4,12 +4,12 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { reanchor } from "../src/anchors.js";
-import { unifiedDiff } from "../src/diff.js";
-import { startServer } from "../src/server.js";
-import { sourceOffsetForMappedText, sourceTextForRange } from "../web/selection.js";
-import { findLatestMarkdown, resolveDocument } from "../src/document.js";
-import { resolveDataDir } from "../src/storage.js";
+import { reanchor } from "../skills/jstack-doc-review/src/anchors.js";
+import { unifiedDiff } from "../skills/jstack-doc-review/src/diff.js";
+import { startServer } from "../skills/jstack-doc-review/src/server.js";
+import { sourceOffsetForMappedText, sourceTextForRange } from "../skills/jstack-doc-review/web/selection.js";
+import { findLatestMarkdown, resolveDocument } from "../skills/jstack-doc-review/src/document.js";
+import { resolveDataDir } from "../skills/jstack-doc-review/src/storage.js";
 
 test("selects the most recently created Markdown when the path is omitted", async () => {
   const dir = await mkdtemp(join(tmpdir(), "jstack-doc-review-document-test-"));
