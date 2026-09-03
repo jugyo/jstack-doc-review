@@ -8,13 +8,20 @@
 
 ## Installation
 
+The `jstack-doc-review` npm package has not been published yet. Until it is
+available from npm, install the CLI and skill from a local clone for development:
+
 ```bash
-npx skills add jugyo/jstack-doc-review --skill jstack-doc-review --global --yes
+git clone https://github.com/jugyo/jstack-doc-review.git
+cd jstack-doc-review
+npm link
+npx skills add . --skill jstack-doc-review --global --yes
 ```
 
-This installs the integration for agents supported by the [`skills`](https://skills.sh/) CLI. The skill runs the `jstack-doc-review` CLI through `npx`, so no separate global npm installation is required. Restart the agent if the skill is not recognized immediately.
-
-When developing this repository locally, use `npm link` to use the working copy instead of the published package.
+`npm link` makes the local CLI available, and the [`skills`](https://skills.sh/)
+CLI installs the integration for supported agents. Restart the agent if the
+skill is not recognized immediately. A public installation command will be
+documented after the npm package is published.
 
 ## Open a document
 
