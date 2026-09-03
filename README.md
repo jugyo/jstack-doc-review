@@ -9,7 +9,7 @@
 ## Installation
 
 ```bash
-npx skills add jugyo/jstack-md --skill jstack-doc-review --global --yes
+npx skills add jugyo/jstack-doc-review --skill jstack-doc-review --global --yes
 ```
 
 This installs the integration for agents supported by the [`skills`](https://skills.sh/) CLI. The skill runs the `jstack-doc-review` CLI through `npx`, so no separate global npm installation is required. Restart the agent if the skill is not recognized immediately.
