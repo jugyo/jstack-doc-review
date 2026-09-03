@@ -1,6 +1,6 @@
 import { sourceOffsetForMappedText, sourceTextForRange } from "./selection.js";
 
-let state, selection, historyRevisionId;
+let state, selection, historyRevisionId, composerSubmitting = false;
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value).replace(/[&<>"']/g, character => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[character]));
 
@@ -147,23 +147,28 @@ function openLineComposer(line, source) {
     prefix: lines.slice(Math.max(0, line - 3), line - 1).join("\n"),
     suffix: lines.slice(line, line + 2).join("\n")
   };
-  const box = source.getBoundingClientRect();
+  openComposer(source.getBoundingClientRect());
+  showSelection($("#composer"), text, line, line);
+}
+
+function openComposer(box) {
   const composer = $("#composer");
+  $("#selection-trigger").hidden = true;
   composer.hidden = false;
   composer.style.left = `${Math.min(innerWidth - 390, Math.max(10, box.right + 8))}px`;
   composer.style.top = `${Math.min(innerHeight - 190, Math.max(10, box.top))}px`;
-  showSelection(composer, text, line, line);
   composer.querySelector("textarea").focus();
 }
 
 document.addEventListener("mouseup", event => {
-  if (event.target.closest(".thread,#composer,header,dialog")) return;
+  if (event.target.closest("#composer,#selection-trigger")) return;
+  if (!event.target.closest(".document-content")) return hideSelectionTrigger();
   const selected = getSelection();
-  if (!selected || selected.isCollapsed) return;
+  if (!selected || selected.isCollapsed) return hideSelectionTrigger();
   const range = selected.getRangeAt(0);
   const start = elLine(range.startContainer);
   const end = elLine(range.endContainer);
-  if (!selected.toString().trim() || !start || !end) return;
+  if (!selected.toString().trim() || !start || !end) return hideSelectionTrigger();
   const a = Math.min(start, end), b = Math.max(start, end), lines = state.document.content.split("\n");
   const startBody = document.querySelector(`[data-line="${a}"] .line-body`);
   const endBody = document.querySelector(`[data-line="${b}"] .line-body`);
@@ -171,13 +176,16 @@ document.addEventListener("mouseup", event => {
   const endOffset = sourceOffsetAt(range.endContainer, range.endOffset, endBody, lines[b - 1]);
   const text = sourceTextForRange(lines, a, startOffset, b, endOffset);
   selection = { startLine: a, endLine: b, selectedText: text, prefix: lines.slice(Math.max(0, a - 3), a - 1).join("\n"), suffix: lines.slice(b, b + 2).join("\n") };
-  const box = range.getBoundingClientRect(), composer = $("#composer");
-  composer.hidden = false;
-  composer.style.left = `${Math.min(innerWidth - 390, Math.max(10, box.left))}px`;
-  composer.style.top = `${Math.min(innerHeight - 190, box.bottom + 10)}px`;
-  showSelection(composer, text, a, b);
-  composer.querySelector("textarea").focus();
+  const box = range.getBoundingClientRect(), trigger = $("#selection-trigger");
+  $("#composer").hidden = true;
+  trigger.style.left = `${Math.min(innerWidth - 38, Math.max(10, box.right + 6))}px`;
+  trigger.style.top = `${Math.min(innerHeight - 38, Math.max(10, box.top - 30))}px`;
+  trigger.hidden = false;
 });
+
+function hideSelectionTrigger() {
+  $("#selection-trigger").hidden = true;
+}
 
 function showSelection(composer, text, startLine, endLine) {
   const label = startLine == null ? "Document" : startLine === endLine ? `line ${startLine}` : `lines ${startLine}–${endLine}`;
@@ -217,16 +225,44 @@ function mappedOffset(mapped, offset) {
   }, offset);
 }
 
-$("#composer [data-cancel]").onclick = () => $("#composer").hidden = true;
-$("#composer [data-submit]").onclick = async () => {
+$("#selection-trigger").onclick = () => {
+  if (!selection) return;
+  openComposer($("#selection-trigger").getBoundingClientRect());
+  showSelection($("#composer"), selection.selectedText, selection.startLine, selection.endLine);
+};
+$("#composer [data-cancel]").onclick = () => {
+  $("#composer").hidden = true;
+  hideSelectionTrigger();
+};
+async function submitComposer() {
+  if (composerSubmitting) return;
   const textarea = $("#composer textarea"), comment = textarea.value.trim();
   if (!comment) return;
-  await api("/api/threads", { method: "POST", body: JSON.stringify({ anchor: selection, comment }) });
-  textarea.value = "";
+  composerSubmitting = true;
+  try {
+    await api("/api/threads", { method: "POST", body: JSON.stringify({ anchor: selection, comment }) });
+    textarea.value = "";
+    $("#composer").hidden = true;
+    hideSelectionTrigger();
+    getSelection().removeAllRanges();
+    await load("Comment sent to the authoring agent.");
+  } finally {
+    composerSubmitting = false;
+  }
+}
+$("#composer [data-submit]").onclick = submitComposer;
+$("#composer textarea").addEventListener("keydown", event => {
+  if (event.metaKey && event.key === "Enter") {
+    event.preventDefault();
+    submitComposer();
+  }
+});
+
+document.addEventListener("click", event => {
+  if ($("#composer").hidden || event.target.closest("#composer,#selection-trigger,[data-comment-line]")) return;
   $("#composer").hidden = true;
-  getSelection().removeAllRanges();
-  await load("Comment sent to the authoring agent.");
-};
+  hideSelectionTrigger();
+});
 
 $("#document").addEventListener("click", async event => {
   const trigger = event.target.closest("[data-comment-line]");
