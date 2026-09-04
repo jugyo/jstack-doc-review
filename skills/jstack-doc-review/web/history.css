@@ -15,23 +15,24 @@
   border-bottom: 1px solid var(--line);
 }
 
-.history-title h2 { margin: 0; font: 700 22px Georgia, serif; }
+.history-title h2 { margin: 0; font-size: 19px; font-weight: 700; }
 .history-title p { margin: 2px 0 0; color: var(--muted); font-size: 11px; }
 .history-layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); height: calc(100% - 72px); }
-#revisionList { overflow: auto; padding: 10px; border-right: 1px solid var(--line); background: #f7f5f0; }
+#revisionList { overflow: auto; padding: 10px; border-right: 1px solid var(--line); background: var(--surface-subtle); }
 .revision-choice { width: 100%; display: block; margin-bottom: 5px; padding: 11px 12px; text-align: left; border-color: transparent; background: transparent; }
-.revision-choice:hover { background: #eeebe4; }
-.revision-choice.selected { color: white; background: var(--ink); }
+.revision-choice:hover { border-color: transparent; background: var(--surface); }
+.revision-choice.selected { color: var(--invert-ink); background: var(--invert-bg); }
+.revision-choice.selected:hover { border-color: transparent; background: var(--invert-bg); }
 .revision-choice strong, .revision-choice span { display: block; }
 .revision-choice span { margin-top: 2px; overflow: hidden; color: var(--muted); font-size: 11px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
-.revision-choice.selected span { color: #c9c7c1; }
+.revision-choice.selected span { color: var(--invert-muted); }
 .history-detail { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .history-detail-head { min-height: 72px; display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 12px 18px; border-bottom: 1px solid var(--line); }
 .history-detail-head strong, .history-detail-head span { display: block; }
 .history-detail-head span { color: var(--muted); font-size: 11px; }
-#historyDiff { flex: 1; min-height: 0; margin: 0; padding: 18px; overflow: auto; background: #292a2d; color: #ddd; font: 12px/1.55 ui-monospace, SFMono-Regular, monospace; }
-#historyDiff .add { color: #85d7a2; }
-#historyDiff .del { color: #f2938c; }
+#historyDiff { flex: 1; min-height: 0; margin: 0; padding: 18px; overflow: auto; background: var(--surface-code); color: var(--ink); font: 12px/1.55 ui-monospace, SFMono-Regular, monospace; }
+#historyDiff .add { color: var(--diff-add); }
+#historyDiff .del { color: var(--diff-del); }
 
 @media (max-width: 700px) {
   #historyDialog { width: calc(100vw - 16px); height: calc(100vh - 16px); }
