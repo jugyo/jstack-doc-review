@@ -69,7 +69,11 @@ main { max-width: 1800px; margin: 0 auto; padding: 44px 30px 140px; }
 .thread-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px; border-bottom: 1px solid var(--line); background: #faf8f3; color: var(--muted); font-size: 12px; }
 .thread.resolved.collapsed .thread-head { padding: 6px 10px; border-bottom: 0; font-size: 11px; }
 .thread-head button { border: 0; padding: 3px 7px; font-size: 11px; white-space: nowrap; }
+.thread-toggle { display: block; width: 100%; border: 0; border-bottom: 1px solid #eeeae2; border-radius: 0; padding: 7px 14px; background: #f7f5f0; color: var(--muted); font-size: 12px; text-align: left; }
+.thread-toggle:hover { border-color: #eeeae2; background: #f1eee7; color: var(--ink); }
 .message { padding: 11px 14px; border-bottom: 1px solid #eeeae2; background: #fff; }
+.message.older { display: none; }
+.thread.messages-expanded .message.older { display: block; }
 .message.human { background: #fffdfb; }
 .message:last-of-type { border: 0; }
 .message-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; }

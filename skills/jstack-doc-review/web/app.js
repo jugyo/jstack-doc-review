@@ -2,6 +2,8 @@ import { sourceOffsetForMappedText, sourceTextForRange } from "./selection.js";
 import { escapeHtml as esc, renderMarkdown } from "./markdown.js";
 
 let state, selection, historyRevisionId, composerSubmitting = false;
+const VISIBLE_MESSAGE_COUNT = 3;
+const expandedThreads = new Set();
 const $ = selector => document.querySelector(selector);
 const isSubmitShortcut = event => (event.metaKey || event.ctrlKey) && event.key === "Enter";
 
@@ -101,11 +103,28 @@ function threadHtml(thread) {
       <div class="thread-head"><span>${detached}Resolved · ${range}</span><button type="button" data-status="open">Reopen</button></div>
     </article>`;
   }
-  return `<article class="thread open ${thread.orphaned ? "orphaned" : ""}" data-thread="${thread.id}" data-start-line="${thread.anchor.startLine}" data-end-line="${thread.anchor.endLine}">
+  const olderCount = Math.max(0, thread.messages.length - VISIBLE_MESSAGE_COUNT);
+  const expanded = expandedThreads.has(thread.id);
+  return `<article class="thread open ${expanded ? "messages-expanded" : ""} ${thread.orphaned ? "orphaned" : ""}" data-thread="${thread.id}" data-start-line="${thread.anchor.startLine}" data-end-line="${thread.anchor.endLine}">
     <div class="thread-head"><span>${detached}Conversation · ${range}</span><button type="button" data-status="resolved">Resolve</button></div>
-    ${thread.messages.map(message => `<div class="message ${message.author}"><div class="message-meta"><span class="author">${esc(message.author)}</span>${message.author === "human" && message.agentStatus ? `<span class="message-status ${message.agentStatus}">${statusLabel(message.agentStatus)}</span>` : ""}</div><div class="message-body">${renderMarkdown(message.content)}</div></div>`).join("")}
+    ${olderCount ? `<button type="button" class="thread-toggle" data-toggle-messages data-older-count="${olderCount}" aria-expanded="${expanded}">${toggleLabel(olderCount, expanded)}</button>` : ""}
+    ${thread.messages.map((message, index) => `<div class="message ${message.author} ${index < olderCount ? "older" : ""}"><div class="message-meta"><span class="author">${esc(message.author)}</span>${message.author === "human" && message.agentStatus ? `<span class="message-status ${message.agentStatus}">${statusLabel(message.agentStatus)}</span>` : ""}</div><div class="message-body">${renderMarkdown(message.content)}</div></div>`).join("")}
     <form class="reply"><textarea placeholder="Continue this conversation…" aria-label="Reply" rows="2"></textarea><button type="submit">Reply</button></form>
   </article>`;
+}
+
+function toggleLabel(olderCount, expanded) {
+  return expanded ? "Hide older messages" : `Show ${olderCount} older message${olderCount === 1 ? "" : "s"}`;
+}
+
+function toggleThreadMessages(thread) {
+  const expanded = !expandedThreads.has(thread.dataset.thread);
+  if (expanded) expandedThreads.add(thread.dataset.thread);
+  else expandedThreads.delete(thread.dataset.thread);
+  thread.classList.toggle("messages-expanded", expanded);
+  const toggle = thread.querySelector(".thread-toggle");
+  toggle.textContent = toggleLabel(Number(toggle.dataset.olderCount), expanded);
+  toggle.setAttribute("aria-expanded", String(expanded));
 }
 
 function statusLabel(status) {
@@ -267,6 +286,8 @@ document.addEventListener("click", event => {
 $("#document").addEventListener("click", async event => {
   const trigger = event.target.closest("[data-comment-line]");
   if (trigger) return openLineComposer(Number(trigger.dataset.commentLine), trigger);
+  const toggle = event.target.closest("[data-toggle-messages]");
+  if (toggle) return toggleThreadMessages(toggle.closest(".thread"));
   const status = event.target.dataset.status;
   if (status) {
     await api(`/api/threads/${event.target.closest(".thread").dataset.thread}/status`, { method: "POST", body: JSON.stringify({ status }) });
