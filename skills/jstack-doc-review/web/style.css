@@ -32,7 +32,6 @@ main { max-width: 1320px; margin: 0 auto; padding: 44px 30px 140px; }
 .document-layout { display: grid; grid-template-columns: minmax(0, 1fr) 350px; gap: 30px; align-items: start; }
 .document-content { min-width: 0; padding: 12px 18px 28px; border: 1px solid rgba(229, 226, 218, .9); border-radius: 16px; background: rgba(255, 255, 255, .58); box-shadow: 0 14px 40px rgba(30, 25, 15, .045); }
 .doc-line { display: grid; grid-template-columns: minmax(0, 1fr) 30px; position: relative; min-width: 0; border-radius: 6px; transition: background .15s; }
-.doc-line:hover { background: #f1eee8; }
 .doc-line.thread-hover { background: #f4eee7; }
 .doc-line.thread-hover .line-body.block-code { background: #45464a; }
 .comment-gutter { display: flex; justify-content: center; padding-top: 4px; user-select: none; }
