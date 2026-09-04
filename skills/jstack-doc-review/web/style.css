@@ -75,7 +75,7 @@ button:active { transform: translateY(1px); }
 .danger { border-color: var(--line); background: var(--state-danger-bg); color: var(--state-danger); }
 .danger:hover { border-color: var(--state-danger); background: var(--state-danger-bg); }
 main { max-width: 1800px; margin: 0 auto; padding: 44px 30px 140px; }
-.document-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 30px; align-items: start; }
+.document-layout { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 30px; align-items: start; }
 .document-content { min-width: 0; padding: 12px 18px 28px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); }
 .doc-line { display: grid; grid-template-columns: minmax(0, 1fr) 30px; position: relative; min-width: 0; border-radius: 3px; transition: background .15s; }
 .doc-line.thread-hover { background: var(--surface-subtle); }
