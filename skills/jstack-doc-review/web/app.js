@@ -142,6 +142,7 @@ function toggleThreadHighlight(thread, highlighted) {
 }
 function renderHistory() {
   const selected = historyRevisionId || state.revision.id;
+  $("#history").textContent = `Revisions (${state.revisions.length})`;
   $("#revisionList").innerHTML = [...state.revisions].reverse().map(revision => `<button class="revision-choice ${revision.id === selected ? "selected" : ""}" data-revision="${revision.id}"><strong>Revision ${revision.number}</strong><span>${esc(revision.reason || "Document changed")}</span><span>${new Date(revision.createdAt).toLocaleString()}</span></button>`).join("");
 }
 
