@@ -7,6 +7,7 @@ import { reanchor } from "../skills/jstack-doc-review/src/anchors.js";
 import { unifiedDiff } from "../skills/jstack-doc-review/src/diff.js";
 import { startServer } from "../skills/jstack-doc-review/src/server.js";
 import { sourceOffsetForMappedText, sourceTextForRange } from "../skills/jstack-doc-review/web/selection.js";
+import { renderMarkdown } from "../skills/jstack-doc-review/web/markdown.js";
 import { findLatestMarkdown, resolveDocument } from "../skills/jstack-doc-review/src/document.js";
 
 test("selects the most recently created Markdown when the path is omitted", async () => {
@@ -78,27 +79,50 @@ test("reanchors selections containing blank lines across updates",()=>{
 });
 test("marks impossible anchors as unresolved",()=>assert.equal(reanchor({startLine:1,endLine:1,selectedText:"gone",prefix:"",suffix:""},"entirely different"),null));
 test("generates a unified diff",()=>{const d=unifiedDiff("a\nb","a\nc");assert.match(d,/^-b$/m);assert.match(d,/^\+c$/m)});
+test("renders comment Markdown as headings, lists, code, and emphasis",()=>{
+  const html=renderMarkdown("## Title\n\n- one\n- two\n\n`inline` and **strong**\n\n```js\nconst a = 1;\n```\n");
+  assert.match(html,/<h2>Title<\/h2>/);
+  assert.match(html,/<ul>\s*<li>one<\/li>/);
+  assert.match(html,/<code>inline<\/code>/);
+  assert.match(html,/<strong>strong<\/strong>/);
+  assert.match(html,/<pre><code class="language-js">const a = 1;/);
+});
+test("keeps raw HTML in comments as text",()=>{
+  const html=renderMarkdown('<img src=x onerror=alert(1)>\n\ninline <b>bold</b>\n');
+  assert.doesNotMatch(html,/<img|<b>/);
+  assert.match(html,/&lt;img src=x onerror=alert\(1\)&gt;/);
+  assert.match(html,/&lt;b&gt;bold&lt;\/b&gt;/);
+});
+test("opens rendered links in a new tab and drops unsafe URLs",()=>{
+  assert.match(renderMarkdown("[docs](https://example.com/a)"),/<a href="https:\/\/example\.com\/a" target="_blank" rel="noreferrer">docs<\/a>/);
+  const unsafe=renderMarkdown("[click](javascript:alert(1)) and ![shot](javascript:alert(1))");
+  assert.doesNotMatch(unsafe,/javascript:/);
+  assert.match(unsafe,/click/);
+});
 
 async function postThread(url, comment) {
   return fetch(url + "/api/threads", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ anchor: { startLine: 1, endLine: 1, selectedText: "# Design" }, comment }) }).then(response => response.json());
 }
 
-async function readSseEvents(reader, count) {
+// A single read can carry several events, so buffering has to survive across reads.
+function sseEvents(reader) {
   const decoder = new TextDecoder();
   let buffer = "";
-  const events = [];
-  while (events.length < count) {
-    const { value, done } = await reader.read();
-    assert.equal(done, false);
-    buffer += decoder.decode(value, { stream: true });
-    const chunks = buffer.split("\n\n");
-    buffer = chunks.pop();
-    for (const chunk of chunks) {
-      const event = chunk.match(/^event: ([^\n]+)\ndata: ([\s\S]+)$/);
-      if (event) events.push({ type: event[1], data: JSON.parse(event[2]) });
+  const pending = [];
+  return async function read(count) {
+    while (pending.length < count) {
+      const { value, done } = await reader.read();
+      assert.equal(done, false);
+      buffer += decoder.decode(value, { stream: true });
+      const chunks = buffer.split("\n\n");
+      buffer = chunks.pop();
+      for (const chunk of chunks) {
+        const event = chunk.match(/^event: ([^\n]+)\ndata: ([\s\S]+)$/);
+        if (event) pending.push({ type: event[1], data: JSON.parse(event[2]) });
+      }
     }
-  }
-  return events;
+    return pending.splice(0, count);
+  };
 }
 
 test("persists consecutive comments in the durable queue and delivers each once after reconnecting", async t => {
@@ -107,14 +131,14 @@ test("persists consecutive comments in the durable queue and delivers each once 
   const app = await startServer({ documentPath: file, port: 0, openBrowser: false, dataDir: join(dir, "data") });
   t.after(() => app.close().catch(() => {}));
   const initialResponse = await fetch(app.url + "/api/agent-events"), initialReader = initialResponse.body.getReader();
-  await readSseEvents(initialReader, 1);
+  await sseEvents(initialReader)(1);
   await initialReader.cancel();
   const first = await postThread(app.url, "First comment");
   const second = await postThread(app.url, "Second comment");
   assert.equal(first.messages[0].agentStatus, "received");
   assert.equal(second.messages[0].agentStatus, "received");
   const response = await fetch(app.url + "/api/agent-events"), reader = response.body.getReader();
-  const events = await readSseEvents(reader, 3);
+  const events = await sseEvents(reader)(3);
   assert.equal(events[0].type, "ready");
   assert.deepEqual(new Set(events.slice(1).map(event => event.data.messageId)), new Set([first.messages[0].id, second.messages[0].id]));
   await reader.cancel();
@@ -145,7 +169,7 @@ test("document conversation API persists, restores, and finishes",async t=>{
   const dir=await mkdtemp(join(tmpdir(),"jstack-doc-review-test-")),file=join(dir,"design.md");await writeFile(file,"# Design\n\nImportant choice.\nA second line.\n");
   const app=await startServer({documentPath:file,port:0,openBrowser:false,dataDir:join(dir,"data")});t.after(()=>app.close().catch(()=>{}));
   let state=await fetch(app.url+"/api/state").then(r=>r.json());assert.equal(state.revision.number,1);
-  const eventResponse=await fetch(app.url+"/api/agent-events"),eventReader=eventResponse.body.getReader();await eventReader.read();
+  const eventResponse=await fetch(app.url+"/api/agent-events"),eventReader=eventResponse.body.getReader(),readEvents=sseEvents(eventReader);await readEvents(1);
   const thread=await fetch(app.url+"/api/threads",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({anchor:{startLine:3,endLine:3,selectedText:"Important choice.",prefix:"# Design\n",suffix:""},comment:"Why?"})}).then(r=>r.json());assert.equal(thread.messages[0].content,"Why?");
   assert.equal(thread.messages[0].agentStatus,"received");
   const multiline="Important choice.\nA second line.";
@@ -157,16 +181,20 @@ test("document conversation API persists, restores, and finishes",async t=>{
   assert.equal(feedbackThread.quote,multiline);
   assert.deepEqual(feedbackThread.lineRange,{start:3,end:4});
   const invalid=await fetch(app.url+"/api/threads",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({anchor:{startLine:999,endLine:999},comment:"Out of range"})});assert.equal(invalid.status,400);
-  const pushed=new TextDecoder().decode((await eventReader.read()).value);assert.match(pushed,/event: feedback/);assert.match(pushed,/Why\?/);
-  const multilinePushed=new TextDecoder().decode((await eventReader.read()).value);assert.match(multilinePushed,/event: feedback/);assert.match(multilinePushed,/Please check both lines/);
+  const [pushed,multilinePushed]=await readEvents(2);
+  assert.deepEqual([pushed.type,pushed.data.messageId],["feedback",thread.messages[0].id]);
+  assert.deepEqual([multilinePushed.type,multilinePushed.data.messageId],["feedback",multilineThread.messages[0].id]);
   const documentThread=await fetch(app.url+"/api/threads",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({anchor:{type:"document"},comment:"Please check the entire document"})}).then(r=>r.json());
   assert.deepEqual(documentThread.anchor,{type:"document"});
-  const documentPushed=new TextDecoder().decode((await eventReader.read()).value);assert.match(documentPushed,/event: feedback/);assert.match(documentPushed,/Please check the entire document/);
+  const [documentPushed]=await readEvents(1);
+  assert.deepEqual([documentPushed.type,documentPushed.data.messageId],["feedback",documentThread.messages[0].id]);
   const documentFeedback=await fetch(app.url+"/api/feedback").then(r=>r.json());
   const documentFeedbackThread=documentFeedback.threads.find(item=>item.id===documentThread.id);
   assert.equal(documentFeedbackThread.scope,"document");assert.equal(documentFeedbackThread.lineRange,null);assert.equal(documentFeedbackThread.surroundingContext,null);assert.equal(documentFeedbackThread.orphaned,false);
   await fetch(`${app.url}/api/threads/${documentThread.id}/messages`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({author:"human",content:"Associate this reply with the entire document too"})});
-  const replyPushed=new TextDecoder().decode((await eventReader.read()).value);assert.match(replyPushed,/event: feedback/);assert.match(replyPushed,/Associate this reply with the entire document too/);
+  const [replyPushed]=await readEvents(1);
+  assert.equal(replyPushed.type,"feedback");
+  assert.ok(replyPushed.data.threads.find(item=>item.id===documentThread.id).messages.some(message=>message.content==="Associate this reply with the entire document too"));
   const processing=await fetch(`${app.url}/api/threads/${thread.id}/messages/${thread.messages[0].id}/agent-status`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({status:"processing"})}).then(r=>r.json());assert.equal(processing.agentStatus,"processing");
   const completed=await fetch(`${app.url}/api/threads/${thread.id}/messages/${thread.messages[0].id}/agent-status`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({status:"completed"})}).then(r=>r.json());assert.equal(completed.agentStatus,"completed");
   await eventReader.cancel();

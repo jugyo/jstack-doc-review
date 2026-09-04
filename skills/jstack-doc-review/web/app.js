@@ -1,8 +1,9 @@
 import { sourceOffsetForMappedText, sourceTextForRange } from "./selection.js";
+import { escapeHtml as esc, renderMarkdown } from "./markdown.js";
 
 let state, selection, historyRevisionId, composerSubmitting = false;
 const $ = selector => document.querySelector(selector);
-const esc = value => String(value).replace(/[&<>"']/g, character => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[character]));
+const isSubmitShortcut = event => (event.metaKey || event.ctrlKey) && event.key === "Enter";
 
 async function api(path, options = {}) {
   const response = await fetch(path, { headers: { "content-type": "application/json" }, ...options });
@@ -102,8 +103,8 @@ function threadHtml(thread) {
   }
   return `<article class="thread open ${thread.orphaned ? "orphaned" : ""}" data-thread="${thread.id}" data-start-line="${thread.anchor.startLine}" data-end-line="${thread.anchor.endLine}">
     <div class="thread-head"><span>${detached}Conversation · ${range}</span><button type="button" data-status="resolved">Resolve</button></div>
-    ${thread.messages.map(message => `<div class="message ${message.author}"><div class="message-meta"><span class="author">${esc(message.author)}</span>${message.author === "human" && message.agentStatus ? `<span class="message-status ${message.agentStatus}">${statusLabel(message.agentStatus)}</span>` : ""}</div><p>${esc(message.content)}</p></div>`).join("")}
-    <form class="reply"><input placeholder="Continue this conversation…" aria-label="Reply"><button type="submit">Reply</button></form>
+    ${thread.messages.map(message => `<div class="message ${message.author}"><div class="message-meta"><span class="author">${esc(message.author)}</span>${message.author === "human" && message.agentStatus ? `<span class="message-status ${message.agentStatus}">${statusLabel(message.agentStatus)}</span>` : ""}</div><div class="message-body">${renderMarkdown(message.content)}</div></div>`).join("")}
+    <form class="reply"><textarea placeholder="Continue this conversation…" aria-label="Reply" rows="2"></textarea><button type="submit">Reply</button></form>
   </article>`;
 }
 
@@ -252,10 +253,9 @@ async function submitComposer() {
 }
 $("#composer [data-submit]").onclick = submitComposer;
 $("#composer textarea").addEventListener("keydown", event => {
-  if (event.metaKey && event.key === "Enter") {
-    event.preventDefault();
-    submitComposer();
-  }
+  if (!isSubmitShortcut(event)) return;
+  event.preventDefault();
+  submitComposer();
 });
 
 document.addEventListener("click", event => {
@@ -298,11 +298,19 @@ $("#document").addEventListener("submit", async event => {
   }
   if (!event.target.matches(".reply")) return;
   event.preventDefault();
-  const input = event.target.querySelector("input"), content = input.value.trim();
+  const textarea = event.target.querySelector("textarea"), content = textarea.value.trim();
   if (!content) return;
   await api(`/api/threads/${event.target.closest(".thread").dataset.thread}/messages`, { method: "POST", body: JSON.stringify({ author: "human", content }) });
-  input.value = "";
+  textarea.value = "";
   await load();
+});
+
+$("#document").addEventListener("keydown", event => {
+  if (!isSubmitShortcut(event) || !event.target.matches?.("textarea")) return;
+  const form = event.target.closest(".reply, .global-composer");
+  if (!form) return;
+  event.preventDefault();
+  form.requestSubmit();
 });
 
 $("#history").onclick = async () => {
