@@ -9,7 +9,7 @@
 ## Installation
 
 ```bash
-npx skills add jugyo/jstack-doc-review --skill jstack-doc-review --global --yes
+npx skills add jugyo/jstack-doc-review --skill jstack-doc-review
 ```
 
 This installs the integration and its bundled runtime for agents supported by
