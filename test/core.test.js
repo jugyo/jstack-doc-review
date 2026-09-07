@@ -9,6 +9,7 @@ import { startServer } from "../skills/jstack-doc-review/src/server.js";
 import { sourceOffsetForMappedText, sourceTextForRange } from "../skills/jstack-doc-review/web/selection.js";
 import { renderMarkdown } from "../skills/jstack-doc-review/web/markdown.js";
 import { findLatestMarkdown, resolveDocument } from "../skills/jstack-doc-review/src/document.js";
+import { ANCHOR_GAP, anchorLayout, anchorLayoutHeight, anchorLeadIn, anchorOpeningScroll } from "../skills/jstack-doc-review/web/anchor-layout.js";
 
 test("selects the most recently created Markdown when the path is omitted", async () => {
   const dir = await mkdtemp(join(tmpdir(), "jstack-doc-review-document-test-"));
@@ -78,6 +79,136 @@ test("reanchors selections containing blank lines across updates",()=>{
   assert.deepEqual([moved.startLine,moved.endLine,moved.selectedText],[2,4,selected]);
 });
 test("marks impossible anchors as unresolved",()=>assert.equal(reanchor({startLine:1,endLine:1,selectedText:"gone",prefix:"",suffix:""},"entirely different"),null));
+test("keeps comments on their anchor line when they do not overlap",()=>{
+  const comments=[{id:"a",target:0,height:60},{id:"b",target:200,height:60},{id:"c",target:400,height:60}];
+  const tops=anchorLayout(comments,{activeId:"b",gap:12});
+  assert.deepEqual(tops,[0,200,400]);
+  assert.equal(anchorLayoutHeight(comments,tops),460);
+});
+test("keeps the active comment on its anchor and pushes the overlapping ones away",()=>{
+  const comments=[{id:"a",target:100,height:60},{id:"b",target:120,height:60},{id:"c",target:140,height:60}];
+  assert.deepEqual(anchorLayout(comments,{activeId:"b",gap:12}),[48,120,192]);
+});
+test("keeps every comment visible without overlap in anchor order",()=>{
+  const comments=[{id:"a",target:300,height:80},{id:"b",target:310,height:40},{id:"c",target:320,height:100}];
+  const tops=anchorLayout(comments,{activeId:"c",gap:12});
+  assert.deepEqual(tops,[176,268,320]);
+  tops.forEach((top,index)=>{if(index)assert.ok(top>=tops[index-1]+comments[index-1].height+12)});
+});
+test("stacks comments from the top when none is active",()=>{
+  const comments=[{id:"a",target:0,height:60},{id:"b",target:10,height:60},{id:"c",target:500,height:60}];
+  assert.deepEqual(anchorLayout(comments,{gap:12}),[0,72,500]);
+  assert.deepEqual(anchorLayout(comments,{activeId:"document-wide",gap:12}),anchorLayout(comments,{gap:12}));
+});
+test("reports how far above its top the column reaches, and holds it there when told to",()=>{
+  // Asked without a floor, a comment anchored above the top of the column says so — that is what the
+  // caller reads to know how much further the document has to be led in.
+  const comments=[{id:"a",target:-120,height:60},{id:"b",target:400,height:60}];
+  assert.deepEqual(anchorLayout(comments,{gap:12}),[-120,400]);
+  assert.deepEqual(anchorLayout(comments,{activeId:"a",gap:12}),[-120,400]);
+  // Held to its top, it settles for as close as it can get and the one below keeps its own line.
+  assert.deepEqual(anchorLayout(comments,{gap:12,floor:0}),[0,400]);
+});
+test("falls back to the shared gap when the caller does not name one",()=>{
+  const comments=[{id:"a",target:0,height:60},{id:"b",target:10,height:60}];
+  assert.deepEqual(anchorLayout(comments),[0,60+ANCHOR_GAP]);
+});
+test("leads the document in only as far as the column reaches above its top",()=>{
+  // Nothing above the top of the column: the document keeps the padding its stylesheet asks for.
+  assert.equal(anchorLeadIn({leadIn:12,tops:[300,600],basePadding:12}),12);
+  // 88px above it: the first line moves down by exactly that much, and no further.
+  assert.equal(anchorLeadIn({leadIn:12,tops:[-88,120],basePadding:12}),100);
+  assert.equal(anchorLeadIn({leadIn:12,tops:[],basePadding:12}),12);
+});
+test("opens the page past a lead-in tall enough to hide the document",()=>{
+  // Room to spare: the page opens where it loaded, with the rail head in view.
+  assert.equal(anchorOpeningScroll({firstLineTop:572,height:900,visible:225,leadIn:460,basePadding:12}),0);
+  // The document would be a sliver at the bottom, so the page opens past the lead-in instead and the
+  // first line lands where it sits without one.
+  assert.equal(anchorOpeningScroll({firstLineTop:884,height:900,visible:225,leadIn:772,basePadding:12}),760);
+  assert.equal(anchorOpeningScroll({firstLineTop:124,height:900,visible:225,leadIn:12,basePadding:12}),0);
+});
+test("hands the room back no faster than the page can be scrolled down again",()=>{
+  // 500px of lead-in is no longer needed, and the reader is far enough down to give all of it back.
+  assert.equal(anchorLeadIn({leadIn:512,tops:[500,900],basePadding:12,room:900}),12);
+  // Near the top of the page there is nowhere to scroll to, so the room is held on to instead.
+  assert.equal(anchorLeadIn({leadIn:512,tops:[500,900],basePadding:12,room:100}),412);
+  assert.equal(anchorLeadIn({leadIn:512,tops:[500,900],basePadding:12,room:0}),512);
+  // Taking room is never held back — the page can always be scrolled further down.
+  assert.equal(anchorLeadIn({leadIn:12,tops:[-88,120],basePadding:12,room:0}),100);
+});
+// The geometry of the whole placement, as the page applies it: the rail pins a head of some height
+// above the column, a comment sits some way into the document, and the lead-in is what puts the two
+// coordinate systems together. `position` is where the comment ends up, `line` is where its line ends
+// up, and the criteria are about the two being equal.
+function placeComments(railHead, comments, activeId, basePadding = 12) {
+  const target = (leadIn, comment) => leadIn - railHead + comment.offset;
+  const lay = (leadIn, floor) => anchorLayout(comments.map(comment => ({ ...comment, target: target(leadIn, comment) })), { activeId, floor });
+  let leadIn = basePadding, tops = [];
+  for (let pass = 0; pass < 2; pass++) {
+    leadIn = anchorLeadIn({ leadIn, tops: lay(leadIn), basePadding });
+    tops = lay(leadIn, 0);
+  }
+  return { leadIn, placed: comments.map((comment, index) => ({ id: comment.id, position: tops[index], line: target(leadIn, comment) })) };
+}
+test("puts the active comment on its own line however tall the pinned head is",()=>{
+  // Three comments crowded into the first lines of the document: cards are ~199px, lines ~56px apart.
+  const comments=[{id:"a",offset:0,height:199},{id:"b",offset:56,height:199},{id:"c",offset:112,height:199}];
+  for (const railHead of [245, 460, 1412]) {
+    for (const active of ["a","b","c"]) {
+      const { leadIn, placed } = placeComments(railHead, comments, active);
+      const chosen = placed.find(comment => comment.id === active);
+      assert.equal(chosen.position, chosen.line, `active ${active} is off its line with a ${railHead}px head`);
+      assert.ok(leadIn >= 12);
+      placed.forEach((comment, index) => { if (index) assert.ok(comment.position >= placed[index-1].position + 199 + ANCHOR_GAP) });
+    }
+  }
+});
+test("lines a comment up with its line with nothing held on it",()=>{
+  // Anchored above the top of the column, and no reader holding anything: the document is still led in
+  // for it, because the column is where its line has to be read from.
+  const comments=[{id:"a",offset:56,height:199},{id:"b",offset:900,height:199}];
+  for (const railHead of [245, 1412]) {
+    const { leadIn, placed } = placeComments(railHead, comments, null);
+    assert.equal(leadIn, railHead - 56);
+    assert.equal(placed[0].position, placed[0].line, `off its line with a ${railHead}px head`);
+  }
+});
+test("leaves the document alone when every comment already has room",()=>{
+  const comments=[{id:"a",offset:900,height:199},{id:"b",offset:1600,height:199}];
+  for (const active of [null,"a","b"]) {
+    const { leadIn, placed } = placeComments(245, comments, active);
+    assert.equal(leadIn, 12, "the document is led in for comments that do not need it");
+    placed.forEach(comment => assert.equal(comment.position, comment.line));
+  }
+});
+test("serves every web module the page loads, and nothing else", async t => {
+  const dir = await mkdtemp(join(tmpdir(), "jstack-doc-review-assets-test-")), file = join(dir, "doc.md");
+  await writeFile(file, "# Doc\n");
+  const app = await startServer({ documentPath: file, port: 0, openBrowser: false, dataDir: join(dir, "data") });
+  t.after(() => app.close().catch(() => {}));
+  // Follow the page to the modules it loads and each module to the ones it imports, so a module that
+  // only ever arrives through an import is covered too.
+  const page = await (await fetch(app.url)).text();
+  const pending = [...page.matchAll(/(?:src|href)="(\/[^"]+)"/g)].map(match => match[1]), seen = new Set();
+  assert.ok(pending.includes("/app.js"));
+  while (pending.length) {
+    const path = pending.pop();
+    if (seen.has(path)) continue;
+    seen.add(path);
+    const response = await fetch(app.url + path);
+    assert.equal(response.status, 200, `${path} is not served`);
+    if (!path.endsWith(".js")) continue;
+    const source = await response.text();
+    for (const [, specifier] of source.matchAll(/from\s+"(\.[^"]+)"/g)) {
+      pending.push(new URL(specifier, `http://localhost${path}`).pathname);
+    }
+  }
+  assert.ok(seen.has("/anchor-layout.js") && seen.has("/vendor/marked.esm.js"), [...seen].join(" "));
+  for (const path of ["/src/server.js", "/nope.js", "/app.js/", "/../src/server.js", "/%2e%2e/src/server.js", "/vendor/../../src/server.js"]) {
+    assert.equal((await fetch(app.url + path)).status, 404, `${path} should not be served`);
+  }
+});
 test("generates a unified diff",()=>{const d=unifiedDiff("a\nb","a\nc");assert.match(d,/^-b$/m);assert.match(d,/^\+c$/m)});
 test("renders comment Markdown as headings, lists, code, and emphasis",()=>{
   const html=renderMarkdown("## Title\n\n- one\n- two\n\n`inline` and **strong**\n\n```js\nconst a = 1;\n```\n");

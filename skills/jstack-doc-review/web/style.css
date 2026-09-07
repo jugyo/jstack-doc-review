@@ -106,9 +106,14 @@ main { max-width: 1800px; margin: 0 auto; padding: 44px 30px 140px; }
 .empty-rail { display: flex; flex-direction: column; gap: 3px; border: 1px dashed var(--line); border-radius: 4px; padding: 16px; color: var(--muted); background: var(--surface); font-size: 12px; }
 .empty-rail strong { color: var(--ink); font-size: 13px; }
 .document-threads { display: flex; flex-direction: column; gap: 8px; margin-bottom: 4px; }
+.anchored-threads { position: relative; pointer-events: none; }
+.anchored-threads > .thread { position: absolute; top: 0; left: 0; right: 0; pointer-events: auto; transition: transform .18s ease; }
+.anchored-threads.placing > .thread { transition: none; }
+.anchored-threads > .thread.active { z-index: 2; }
 .thread { margin: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); }
 .thread.resolved { opacity: .7; }
 .thread.orphaned .thread-head { color: var(--state-warn); }
+.thread.active { border-color: var(--focus); outline: 1px solid var(--focus); }
 .thread-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px; border-bottom: 1px solid var(--line); background: var(--surface-subtle); color: var(--muted); font-size: 12px; }
 .thread.resolved.collapsed .thread-head { padding: 6px 10px; border-bottom: 0; font-size: 11px; }
 .thread-head button { border: 0; padding: 3px 7px; background: transparent; font-size: 11px; white-space: nowrap; }
@@ -181,6 +186,8 @@ dialog p { color: var(--muted); }
   .document-layout { display: block; }
   .document-content { padding: 8px 12px 22px; }
   .comment-rail { margin-top: 24px; padding-left: 30px; }
+  .anchored-threads { display: contents; }
+  .anchored-threads > .thread { position: static; transform: none !important; }
 }
 
 @media (max-width: 760px) {

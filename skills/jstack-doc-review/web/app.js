@@ -1,11 +1,16 @@
 import { sourceOffsetForMappedText, sourceTextForRange } from "./selection.js";
 import { escapeHtml as esc, renderMarkdown } from "./markdown.js";
+import { anchorLayout, anchorLayoutHeight, anchorLeadIn, anchorOpeningScroll } from "./anchor-layout.js";
 
 let state, selection, historyRevisionId, composerSubmitting = false;
+let activeThreadId = null, anchorFrame = 0, documentBasePadding = null, documentLeadIn = null;
+let anchorsPlaced = false, columnHeight = null;
 const VISIBLE_MESSAGE_COUNT = 3;
 const expandedThreads = new Set();
 const $ = selector => document.querySelector(selector);
 const isSubmitShortcut = event => (event.metaKey || event.ctrlKey) && event.key === "Enter";
+const stackedRail = matchMedia("(max-width: 900px)");
+const anchorObserver = new ResizeObserver(() => scheduleAnchorLayout());
 
 async function api(path, options = {}) {
   const response = await fetch(path, { headers: { "content-type": "application/json" }, ...options });
@@ -81,11 +86,18 @@ function render() {
   const detached = comments.filter(thread => thread.orphaned);
   const documentComments = comments.filter(thread => thread.anchor.type === "document");
   const attached = comments.filter(thread => !thread.orphaned && thread.anchor.type !== "document");
-  const commentHtml = (documentComments.length ? `<div class="document-threads">${documentComments.map(threadHtml).join("")}</div>` : "") + attached.map(threadHtml).join("") + (detached.length ? `<div class="detached-threads"><div class="detached-label">Detached comments</div>${detached.map(threadHtml).join("")}</div>` : "");
+  // Only a comment in the column can hold it in place, so one just pinned outside it stops being active.
+  if (!attached.some(thread => thread.id === activeThreadId)) activeThreadId = null;
+  const commentHtml = (documentComments.length ? `<div class="document-threads">${documentComments.map(threadHtml).join("")}</div>` : "") + (attached.length ? `<div class="anchored-threads">${attached.map(threadHtml).join("")}</div>` : "") + (detached.length ? `<div class="detached-threads"><div class="detached-label">Detached comments</div>${detached.map(threadHtml).join("")}</div>` : "");
   const globalComposer = `<form class="global-composer" id="globalComposer"><textarea aria-label="Comment" placeholder="Write a comment…" rows="3"></textarea><div class="global-composer-actions"><button type="submit" class="primary">Send</button></div></form>`;
   const railHeader = `<div class="rail-heading"><div><span class="rail-kicker">CONVERSATION</span><strong>Comments</strong></div><span class="thread-count">${comments.length} comment${comments.length === 1 ? "" : "s"}</span></div>`;
   const emptyRail = commentHtml ? "" : '<div class="empty-rail">No comments yet</div>';
   $("#document").innerHTML = `<div class="document-layout"><div class="document-content">${documentHtml}</div><div class="comment-rail">${globalComposer}${railHeader}${commentHtml}${emptyRail}</div></div>`;
+  observeAnchoredThreads();
+  // The comments that frame was scheduled for are gone; placing the new ones covers it.
+  cancelAnimationFrame(anchorFrame);
+  anchorFrame = 0;
+  layoutAnchoredThreads({ placing: true });
   renderHistory();
   $("#binding").textContent = state.agentBinding
     ? `Bound to ${state.agentBinding.provider}${state.agentBinding.sessionId ? ` · ${state.agentBinding.sessionId}` : ""}`
@@ -99,13 +111,13 @@ function threadHtml(thread) {
     : `lines ${thread.anchor.startLine}–${thread.anchor.endLine}`;
   const detached = thread.orphaned ? "Detached · " : "";
   if (thread.status === "resolved") {
-    return `<article class="thread resolved collapsed ${thread.orphaned ? "orphaned" : ""}" data-thread="${thread.id}" data-start-line="${thread.anchor.startLine}" data-end-line="${thread.anchor.endLine}">
+    return `<article class="thread resolved collapsed ${activeClass(thread)} ${thread.orphaned ? "orphaned" : ""}" data-thread="${thread.id}" data-start-line="${thread.anchor.startLine}" data-end-line="${thread.anchor.endLine}">
       <div class="thread-head"><span>${detached}Resolved · ${range}</span><button type="button" data-status="open">Reopen</button></div>
     </article>`;
   }
   const olderCount = Math.max(0, thread.messages.length - VISIBLE_MESSAGE_COUNT);
   const expanded = expandedThreads.has(thread.id);
-  return `<article class="thread open ${expanded ? "messages-expanded" : ""} ${thread.orphaned ? "orphaned" : ""}" data-thread="${thread.id}" data-start-line="${thread.anchor.startLine}" data-end-line="${thread.anchor.endLine}">
+  return `<article class="thread open ${activeClass(thread)} ${expanded ? "messages-expanded" : ""} ${thread.orphaned ? "orphaned" : ""}" data-thread="${thread.id}" data-start-line="${thread.anchor.startLine}" data-end-line="${thread.anchor.endLine}">
     <div class="thread-head"><span>${detached}Conversation · ${range}</span><button type="button" data-status="resolved">Resolve</button></div>
     ${olderCount ? `<button type="button" class="thread-toggle" data-toggle-messages data-older-count="${olderCount}" aria-expanded="${expanded}">${toggleLabel(olderCount, expanded)}</button>` : ""}
     ${thread.messages.map((message, index) => `<div class="message ${message.author} ${index < olderCount ? "older" : ""}"><div class="message-meta"><span class="author">${esc(message.author)}</span>${message.author === "human" && message.agentStatus ? `<span class="message-status ${message.agentStatus}">${statusLabel(message.agentStatus)}</span>` : ""}</div><div class="message-body">${renderMarkdown(message.content)}</div></div>`).join("")}
@@ -129,6 +141,124 @@ function toggleThreadMessages(thread) {
 
 function statusLabel(status) {
   return ({ received: "Received", processing: "Processing", completed: "Completed", error: "Error" })[status] || status;
+}
+
+function activeClass(thread) {
+  return thread.id === activeThreadId ? "active" : "";
+}
+
+function setActiveThread(id) {
+  if (activeThreadId === id) return;
+  activeThreadId = id;
+  document.querySelectorAll(".thread").forEach(thread => thread.classList.toggle("active", thread.dataset.thread === id));
+  scheduleAnchorLayout();
+}
+
+function scheduleAnchorLayout() {
+  if (anchorFrame) return;
+  anchorFrame = requestAnimationFrame(() => {
+    anchorFrame = 0;
+    layoutAnchoredThreads();
+  });
+}
+
+function observeAnchoredThreads() {
+  anchorObserver.disconnect();
+  // Lines, column origin and card heights each move the anchors when they change.
+  [$(".document-content"), $(".comment-rail")].forEach(element => element && anchorObserver.observe(element));
+  anchoredThreads().forEach(thread => anchorObserver.observe(thread));
+}
+
+function anchoredThreads() {
+  return [...document.querySelectorAll(".anchored-threads > .thread")];
+}
+
+// Measures the lines and the column, then writes the placement anchorLayout works out.
+function layoutAnchoredThreads({ placing = false } = {}) {
+  const column = $(".anchored-threads"), content = $(".document-content");
+  if (!content) return;
+  const threads = anchoredThreads();
+  if (!column || stackedRail.matches) {
+    const keeping = keepReadingPlace(content);
+    if (documentLeadIn !== null) {
+      content.style.paddingTop = "";
+      documentLeadIn = null;
+    }
+    columnHeight = null;
+    if (column) {
+      column.style.height = "";
+      threads.forEach(thread => thread.style.transform = "");
+    }
+    keeping();
+    return;
+  }
+  if (documentBasePadding === null) documentBasePadding = parseFloat(getComputedStyle(content).paddingTop);
+  // A re-render returns the plain padding and a column with no height, since its cards are positioned.
+  // Measuring then lays the page out short, and the browser clamps the scroll position to it for good.
+  if (documentLeadIn !== null) content.style.paddingTop = `${documentLeadIn}px`;
+  if (columnHeight !== null) column.style.height = `${columnHeight}px`;
+  const leadIn = documentLeadIn ?? documentBasePadding;
+  const originTop = column.getBoundingClientRect().top;
+  const measured = threads.map(thread => {
+    const line = document.querySelector(`.doc-line[data-line="${thread.dataset.startLine}"]`);
+    return {
+      id: thread.dataset.thread,
+      height: thread.offsetHeight,
+      target: line ? line.getBoundingClientRect().top - originTop : 0
+    };
+  });
+  const shift = anchorLeadIn({
+    leadIn,
+    tops: anchorLayout(measured, { activeId: activeThreadId }),
+    basePadding: documentBasePadding,
+    room: scrollY || Infinity
+  }) - leadIn;
+  // Laid out again against the moved lines rather than slid down: floor is an absolute position.
+  const comments = measured.map(comment => ({ ...comment, target: comment.target + shift }));
+  const tops = anchorLayout(comments, { activeId: activeThreadId, floor: 0 });
+  const keeping = keepReadingPlace(content);
+  documentLeadIn = leadIn + shift;
+  if (shift) content.style.paddingTop = `${documentLeadIn}px`;
+  // Freshly rendered cards carry no transform, so animating them would slide the column down from the
+  // top of the rail on every re-render.
+  if (placing) column.classList.add("placing");
+  threads.forEach((thread, index) => thread.style.transform = `translateY(${tops[index]}px)`);
+  columnHeight = Math.max(0, Math.ceil(anchorLayoutHeight(comments, tops)));
+  column.style.height = `${columnHeight}px`;
+  if (placing) {
+    column.getBoundingClientRect();
+    column.classList.remove("placing");
+  }
+  keeping();
+}
+
+// Keeps the document where it sits on screen across a rewrite. Measured after every change is
+// written: the column is what makes the page long enough to scroll that far.
+function keepReadingPlace(content) {
+  const line = content.querySelector(".doc-line");
+  if (!line) return () => {};
+  // Nothing to keep on the first placement — only a lead-in tall enough to hide the document.
+  if (!anchorsPlaced) {
+    anchorsPlaced = true;
+    return () => scrollTo(scrollX, anchorOpeningScroll({
+      firstLineTop: line.getBoundingClientRect().top,
+      height: innerHeight,
+      visible: innerHeight / 4,
+      leadIn: documentLeadIn ?? documentBasePadding,
+      basePadding: documentBasePadding
+    }));
+  }
+  const from = line.getBoundingClientRect().top;
+  // Asked again next frame for the distance the page was too short for, unless the reader has scrolled.
+  const restore = () => {
+    const to = scrollY + (line.getBoundingClientRect().top - from);
+    if (to !== scrollY) scrollTo(scrollX, to);
+    return scrollY;
+  };
+  return () => {
+    const left = restore();
+    requestAnimationFrame(() => { if (scrollY === left) restore(); });
+  };
 }
 
 function toggleThreadHighlight(thread, highlighted) {
@@ -296,6 +426,17 @@ $("#document").addEventListener("click", async event => {
   }
 });
 
+// A plain click on an anchored comment makes it active; a click on the document clears it. Nothing
+// listed here counts: moving the column for a control or an input would pull it out from under the
+// pointer.
+const KEEPS_ACTIVE_THREAD = "header,dialog,#notice,#composer,#selection-trigger,.global-composer,.rail-heading,.document-threads,.detached-threads,.reply,[data-comment-line],[data-toggle-messages],[data-status]";
+document.addEventListener("click", event => {
+  // The path, not the target: a control that re-renders its own panel is detached by the time this runs.
+  const path = event.composedPath().filter(node => node instanceof Element);
+  if (path.some(node => node.matches(KEEPS_ACTIVE_THREAD))) return;
+  setActiveThread(path.find(node => node.matches(".anchored-threads > .thread"))?.dataset.thread ?? null);
+});
+
 $("#document").addEventListener("mouseover", event => {
   const thread = event.target.closest?.(".thread");
   if (!thread || (event.relatedTarget instanceof Node && thread.contains(event.relatedTarget))) return;
@@ -360,6 +501,14 @@ async function finish() {
   window.close();
 }
 function notice(message) { $("#notice").textContent = message; setTimeout(() => $("#notice").textContent = "", 3500); }
+
+// Column and lines move together with the page, so only a change of size moves the anchors.
+addEventListener("resize", scheduleAnchorLayout);
+// The stylesheet asks for a different padding on either side of the breakpoint.
+stackedRail.addEventListener("change", () => {
+  documentBasePadding = null;
+  scheduleAnchorLayout();
+});
 
 const events = new EventSource("/events");
 events.addEventListener("revision", () => load("The document changed. A new revision was created."));

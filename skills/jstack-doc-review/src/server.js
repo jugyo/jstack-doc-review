@@ -37,7 +37,7 @@ export async function startServer(options) {
     try {
       const url=new URL(req.url,"http://localhost");
       if(req.method==="GET"&&url.pathname==="/")return send(res,200,await readFile(new URL("../web/index.html",import.meta.url),"utf8"),mime[".html"]);
-      if(req.method==="GET"&&["/app.js","/selection.js","/markdown.js","/vendor/marked.esm.js","/style.css","/agent.css","/history.css"].includes(url.pathname))return send(res,200,await readFile(new URL(`../web${url.pathname}`,import.meta.url),"utf8"),mime[url.pathname.slice(url.pathname.lastIndexOf("."))]);
+      if(req.method==="GET"&&["/app.js","/anchor-layout.js","/selection.js","/markdown.js","/vendor/marked.esm.js","/style.css","/agent.css","/history.css"].includes(url.pathname))return send(res,200,await readFile(new URL(`../web${url.pathname}`,import.meta.url),"utf8"),mime[url.pathname.slice(url.pathname.lastIndexOf("."))]);
       if(req.method==="GET"&&url.pathname==="/api/state")return send(res,200,state());
       if(req.method==="GET"&&url.pathname==="/events"){
         res.writeHead(200,{"content-type":"text/event-stream","cache-control":"no-cache","connection":"keep-alive"});res.write("event: connected\ndata: {}\n\n");clients.add(res);req.on("close",()=>clients.delete(res));return;
