@@ -93,6 +93,16 @@ main { max-width: 1800px; margin: 0 auto; padding: 44px 30px 140px; }
 .line-body.block-code { padding: 3px 15px; background: var(--surface-code); color: var(--ink); font: 13px/1.55 ui-monospace, SFMono-Regular, monospace; }
 .line-body.quote { border-left: 2px solid var(--line-strong); padding-left: 14px; color: var(--muted); }
 .line-body.list { padding-left: 28px; }
+.doc-table { display: table; width: 100%; margin: 8px 0; border-collapse: collapse; }
+.doc-table > .doc-line { display: table-row; }
+.doc-table .line-body { display: contents; }
+.doc-table .comment-gutter { display: table-cell; width: 30px; text-align: center; }
+.doc-cell { display: table-cell; border: 1px solid var(--line); padding: 5px 10px; vertical-align: top; }
+.table-head .doc-cell { background: var(--surface-subtle); font-weight: 700; }
+/* The delimiter row keeps its line and its gutter, drawn as the rule under the header. */
+.table-rule .doc-cell { padding: 0; border-top: 0; background: var(--surface-subtle); }
+.table-rule ~ .comment-gutter { padding-top: 0; }
+.table-rule ~ .comment-gutter .comment-trigger { height: 16px; font-size: 14px; }
 .comment-rail { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .rail-heading { display: flex; align-items: flex-end; justify-content: space-between; min-height: 48px; padding: 0 4px 10px; border-bottom: 1px solid var(--line); }
 .rail-heading > div { display: flex; flex-direction: column; gap: 1px; }

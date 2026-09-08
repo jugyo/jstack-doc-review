@@ -9,6 +9,7 @@ import { startServer } from "../skills/jstack-doc-review/src/server.js";
 import { sourceOffsetForMappedText, sourceTextForRange } from "../skills/jstack-doc-review/web/selection.js";
 import { renderMarkdown } from "../skills/jstack-doc-review/web/markdown.js";
 import { findLatestMarkdown, resolveDocument } from "../skills/jstack-doc-review/src/document.js";
+import { tableCells, tableRows } from "../skills/jstack-doc-review/web/table.js";
 import { ANCHOR_GAP, anchorLayout, anchorLayoutHeight, anchorLeadIn, anchorOpeningScroll } from "../skills/jstack-doc-review/web/anchor-layout.js";
 
 test("selects the most recently created Markdown when the path is omitted", async () => {
@@ -208,6 +209,30 @@ test("serves every web module the page loads, and nothing else", async t => {
   for (const path of ["/src/server.js", "/nope.js", "/app.js/", "/../src/server.js", "/%2e%2e/src/server.js", "/vendor/../../src/server.js"]) {
     assert.equal((await fetch(app.url + path)).status, 404, `${path} should not be served`);
   }
+});
+test("marks the rows of a pipe table with their alignments",()=>{
+  const rows=tableRows(["intro","| Name | Size | Note |","|:---|---:|:-:|","| a | 1 | x |","","after"]);
+  assert.equal(rows[0],null);
+  assert.deepEqual(rows[1],{role:"head",align:["left","right","center"],first:true});
+  assert.equal(rows[2].role,"rule");
+  assert.deepEqual(rows[3],{role:"body",align:["left","right","center"],last:true});
+  assert.equal(rows[4],null);
+});
+test("leaves table syntax inside a code fence alone",()=>{
+  assert.deepEqual(tableRows(["```","| a | b |","| --- | --- |","```"]),[null,null,null,null]);
+});
+test("does not read a horizontal rule or a pipe-less line as a table",()=>{
+  assert.deepEqual(tableRows(["a | b","---","c"]),[null,null,null]);
+});
+test("keeps the source offsets of every table cell",()=>{
+  const line="| `code` | **bold** |";
+  const cells=tableCells(line);
+  assert.deepEqual(cells.map(cell=>cell.value),["`code`","**bold**"]);
+  assert.deepEqual(cells.map(cell=>line.slice(cell.start,cell.end)),["`code`","**bold**"]);
+});
+test("reads cells from a row written without the outer pipes",()=>{
+  const line="a | b";
+  assert.deepEqual(tableCells(line).map(cell=>[cell.value,line.slice(cell.start,cell.end)]),[["a","a"],["b","b"]]);
 });
 test("generates a unified diff",()=>{const d=unifiedDiff("a\nb","a\nc");assert.match(d,/^-b$/m);assert.match(d,/^\+c$/m)});
 test("renders comment Markdown as headings, lists, code, and emphasis",()=>{

@@ -1,6 +1,7 @@
 import { sourceOffsetForMappedText, sourceTextForRange } from "./selection.js";
 import { escapeHtml as esc, renderMarkdown } from "./markdown.js";
 import { anchorLayout, anchorLayoutHeight, anchorLeadIn, anchorOpeningScroll } from "./anchor-layout.js";
+import { tableCells, tableRows } from "./table.js";
 
 let state, selection, historyRevisionId, composerSubmitting = false;
 let activeThreadId = null, anchorFrame = 0, documentBasePadding = null, documentLeadIn = null;
@@ -61,6 +62,18 @@ function markdownLine(line, inCode) {
   return { html: inline(line), code: inCode };
 }
 
+// A table row renders as cells rather than a line of text; the delimiter row keeps its line, and its
+// gutter, as a rule between the header and the body.
+function tableLine(line, row) {
+  const cells = row.role === "rule" ? [] : tableCells(line);
+  let html = "";
+  for (let index = 0; index < Math.max(row.align.length, cells.length); index++) {
+    const cell = cells[index], align = row.align[index];
+    html += `<span class="doc-cell"${align ? ` style="text-align:${align}"` : ""}>${cell ? inline(cell.value, cell.start) : ""}</span>`;
+  }
+  return { html, cls: `table-cells table-${row.role}`, code: false };
+}
+
 function render() {
   document.title = `${state.document.name} — jstack-doc-review`;
   $("#filename").textContent = state.document.name;
@@ -73,14 +86,20 @@ function render() {
     return (aLine - bLine) || a.createdAt.localeCompare(b.createdAt);
   });
 
-  state.document.content.split("\n").forEach((line, index) => {
+  const lines = state.document.content.split("\n");
+  const rows = tableRows(lines);
+
+  lines.forEach((line, index) => {
     const lineNumber = index + 1;
-    const output = markdownLine(line, code);
+    const row = rows[index];
+    const output = row ? tableLine(line, row) : markdownLine(line, code);
     code = output.code;
+    if (row?.first) documentHtml += `<div class="doc-table">`;
     documentHtml += `<div class="doc-line" data-line="${lineNumber}">
       <div class="line-body ${output.cls || ""}">${output.html || "&nbsp;"}</div>
       <div class="comment-gutter"><button type="button" class="comment-trigger" data-comment-line="${lineNumber}" aria-label="Add comment to line ${lineNumber}" title="Add comment">＋</button></div>
     </div>`;
+    if (row?.last) documentHtml += `</div>`;
   });
 
   const detached = comments.filter(thread => thread.orphaned);
